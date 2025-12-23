@@ -6,9 +6,10 @@ Over the years I have been developing Python tools that highlight WRF’s capabi
 
 In the Google Drive link and on my GitHub page, you will find a folder called “Python Charts that work World.” Inside that folder you will find 93 Python scripts and 5 Bash shell scripts that run the full suite of graphics, including multicore execution options. The products span synoptic and mesoscale dynamics, severe weather diagnostics, and simulated remote sensing, all based directly on WRF output. The goal is to make a complete, automated, operational-ready post-processing package that takes raw WRF output and turns it into briefing-quality graphics with minimal user intervention.
 
-**Google Drive folder:** [https://drive.google.com/drive/folders/1MKZ6p6YQKqqIWQQz0o2f0tduHFid1nY5?usp=sharing](https://drive.google.com/drive/folders/1MKZ6p6YQKqqIWQQz0o2f0tduHFid1nY5?usp=sharing)
-**GitHub profile:** [https://github.com/HathewayWill/](https://github.com/HathewayWill/)
-**WRF-MOSIT repo:** [https://github.com/HathewayWill/WRF-MOSIT](https://github.com/HathewayWill/WRF-MOSIT/WRF-Python)
+**GitHub profile:** 
+[https://github.com/HathewayWill/](https://github.com/HathewayWill/)
+**WRF-MOSIT repo:** 
+[https://github.com/HathewayWill/WRF-MOSIT](https://github.com/HathewayWill/WRF-MOSIT/WRF-Python)
 
 ---
 

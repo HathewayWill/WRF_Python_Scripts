@@ -418,8 +418,7 @@ if __name__ == "__main__":
     ###########################################################################
     # Create the meteogram plot with 6 subplots (plotting unchanged)
     ###########################################################################
-    dpi = 400 
-    fig, ax = plt.subplots(6, 1, figsize=(3840/dpi, 2160/dpi), dpi=dpi, sharex=True)
+    fig, ax = plt.subplots(6, 1, figsize=(20, 24), dpi=400, sharex=True)
     fig.patch.set_facecolor("white")
 
     # ----------------------------------------------------------------------

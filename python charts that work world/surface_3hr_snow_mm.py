@@ -324,6 +324,25 @@ def process_frame(args):
         else:
             three_hour_snow_mm = np.zeros_like(to_np(total_snow_mm))
 
+        temp = wrf.getvar(ncfile, "T2", timeidx=time_index)
+
+        # --- FIX: time-consistent vinterp to prevent shape mismatch ---
+        temp2_all = wrf.getvar(
+            ncfile, "temp", units="degC", timeidx=ALL_TIMES, method="cat"
+        )
+        temp2_frame = temp2_all[time_index, ...]
+        temp_850 = wrf.vinterp(
+            ncfile,
+            temp2_frame,
+            "pressure",
+            [850],
+            field_type="tc",
+            extrapolate=True,
+            squeeze=True,
+            meta=True,
+            timeidx=time_index,
+        )
+        temp_850 = np.squeeze(temp_850, axis=0)
 
         lats, lons = wrf.latlon_coords(slp)
         (
@@ -340,7 +359,25 @@ def process_frame(args):
         # Numpy conversions + continuity handling
         slp_np = to_np(slp)
         snow_np = to_np(three_hour_snow_mm)
-        
+        temp_np = to_np(temp)
+        temp_850_np = to_np(temp_850)
+
+        (
+            lats_np,
+            lons_np,
+            slp_np,
+            snow_np,
+            temp_np,
+            temp_850_np,
+        ) = handle_domain_continuity_and_polar_mask(
+            lats_np,
+            lons_np,
+            slp_np,
+            snow_np,
+            temp_np,
+            temp_850_np,
+        )
+
         dpi = plt.rcParams.get("figure.dpi", 400)
         fig = plt.figure(figsize=(3840 / dpi, 2160 / dpi), dpi=dpi)
         ax = fig.add_subplot(1, 1, 1, projection=cart_proj)
@@ -365,6 +402,8 @@ def process_frame(args):
 
         # Smooth fields (same sigmas)
         smooth_slp = gaussian_filter(slp_np, sigma=5.0)
+        _ = gaussian_filter(temp_np, sigma=1.0)
+        _ = gaussian_filter(temp_850_np, sigma=1.0)
 
         # SLP contours (resolution-dependent interval)
         if avg_dx_km >= 9 or avg_dy_km >= 9:

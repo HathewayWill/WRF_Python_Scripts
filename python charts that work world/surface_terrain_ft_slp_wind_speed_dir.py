@@ -340,7 +340,7 @@ features = [
     ("physical", "10m", cfeature.COLORS["land"], "black", 0.50, "minor_islands"),
     ("physical", "10m", "none", "black", 0.50, "coastline"),
     ("physical", "10m", cfeature.COLORS["water"], None, None, "ocean_scale_rank", 2),
-    ("physical", "10m", cfeature.COLORS["water"], "lightgrey", 0.75, "lakes", 0),
+    ("physical", "10m", cfeature.COLORS["water"], "lightgrey", 0.75, "lakes", 2),
     ("cultural", "10m", "none", "grey", 1.00, "admin_1_states_provinces", 2),
     ("cultural", "10m", "none", "black", 1.50, "admin_0_countries", 2),
     ("cultural", "10m", "none", "black", 0.60, "admin_2_counties", 2, 0.6),

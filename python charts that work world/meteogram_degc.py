@@ -418,7 +418,7 @@ if __name__ == "__main__":
     ###########################################################################
     # Create the meteogram plot with 6 subplots (plotting unchanged)
     ###########################################################################
-    fig, ax = plt.subplots(6, 1, figsize=(20, 24), dpi=400, sharex=True)
+    fig, ax = plt.subplots(7, 1, figsize=(20, 24), dpi=400, sharex=True)
     fig.patch.set_facecolor("white")
 
     # ----------------------------------------------------------------------
@@ -556,17 +556,13 @@ if __name__ == "__main__":
     )
 
     # ----------------------------------------------------------------------
-    # 5. 1-Hour Precipitation Rates (Rain & Snow, side-by-side bars)
+    # 5. 1-Hour Rain Rate (mm/hr)
     # ----------------------------------------------------------------------
-    ax4_primary = ax[4]
-    ax4_secondary = ax4_primary.twinx()
-
     time_nums = mdates.date2num(time_points)
-    bar_width = 0.01
-    offset = 0.006
-
-    bar_rain = ax4_primary.bar(
-        time_nums - offset,
+    bar_width = 0.02  # keep the same look and spacing as your current precip panel
+    
+    bar_rain = ax[4].bar(
+        time_nums,
         rain_rate_list,
         color="green",
         label="1-hr Rain Rate (mm/hr)",
@@ -575,8 +571,38 @@ if __name__ == "__main__":
         linewidth=0.5,
     )
 
-    bar_snow = ax4_secondary.bar(
-        time_nums + offset,
+    ax[4].set_ylabel("Rain Rate (mm/hr)", color="black", fontsize=12)
+    ax[4].set_title("1-Hour Rain Rate", fontsize=14)
+    ax[4].grid()
+    ax[4].set_ylim(bottom=0)
+    
+    ax[4].xaxis.set_minor_locator(AutoMinorLocator(2))
+    ax[4].yaxis.set_minor_locator(MultipleLocator(1))
+    ax[4].minorticks_on()
+    
+    for rect in bar_rain:
+        height = rect.get_height()
+        if height >= 0.1:
+            ax[4].text(
+                rect.get_x() + rect.get_width() / 2.0,
+                height,
+                f"{height:.1f}",
+                ha="center",
+                va="bottom",
+                fontsize=8,
+                color="black",
+            )
+    
+    ax[4].legend(loc="upper left", fontsize=10)
+    
+    # ----------------------------------------------------------------------
+    # 6. 1-Hour Snow Rate (mm/hr)
+    # ----------------------------------------------------------------------
+    time_nums = mdates.date2num(time_points)
+    bar_width = 0.02  # keep the same look and spacing as your current precip panel
+    
+    bar_snow = ax[5].bar(
+        time_nums,
         snowh20_rate_list,
         color="cyan",
         label="1-hr Snow Rate (mm/hr)",
@@ -585,63 +611,35 @@ if __name__ == "__main__":
         edgecolor="black",
         linewidth=0.5,
     )
-
-    ax4_primary.set_ylabel("Rain Rate (mm/hr)", color="black", fontsize=12)
-    ax4_secondary.set_ylabel("Snow Rate (mm/hr)", color="black", fontsize=12)
-    ax4_primary.set_title("1-Hour Precipitation Rates", fontsize=14)
-    ax4_primary.grid()
-
-    ax4_primary.set_ylim(bottom=0)
-    ax4_secondary.set_ylim(bottom=0)
-
-    ax4_primary.xaxis.set_minor_locator(AutoMinorLocator(2))
-    ax4_primary.yaxis.set_minor_locator(MultipleLocator(1))
-    ax4_primary.minorticks_on()
-
-    ax4_secondary.yaxis.set_minor_locator(MultipleLocator(1))
-    ax4_secondary.minorticks_on()
-
-    # Label rain bars
-    for rect in bar_rain:
-        height = rect.get_height()
-        if height >= 0.1:
-            ax4_primary.text(
-                rect.get_x() + rect.get_width() / 2.0,
-                height,
-                f"{height:.1f}",
-                ha="center",
-                va="bottom",
-                fontsize=11,
-                color="black",
-            )
-
-    # Label snow bars
+    
+    ax[5].set_ylabel("Snow Rate (mm/hr)", color="black", fontsize=12)
+    ax[5].set_title("1-Hour Snow Rate", fontsize=14)
+    ax[5].grid()
+    ax[5].set_ylim(bottom=0)
+    
+    ax[5].xaxis.set_minor_locator(AutoMinorLocator(2))
+    ax[5].yaxis.set_minor_locator(MultipleLocator(1))
+    ax[5].minorticks_on()
+    
     for rect in bar_snow:
         height = rect.get_height()
         if height >= 0.1:
-            ax4_secondary.text(
+            ax[5].text(
                 rect.get_x() + rect.get_width() / 2.0,
                 height,
                 f"{height:.1f}",
                 ha="center",
                 va="bottom",
-                fontsize=11,
+                fontsize=8,
                 color="black",
             )
-
-    handles_p, labels_p = ax4_primary.get_legend_handles_labels()
-    handles_s, labels_s = ax4_secondary.get_legend_handles_labels()
-    ax4_primary.legend(
-        handles_p + handles_s,
-        labels_p + labels_s,
-        loc="upper left",
-        fontsize=10,
-    )
-
+    
+    ax[5].legend(loc="upper left", fontsize=10)
+    
     # ----------------------------------------------------------------------
     # 6. Solar Radiation
     # ----------------------------------------------------------------------
-    ax[5].plot(
+    ax[6].plot(
         time_points,
         solar_rad_list,
         label="Solar Radiation (W/m²)",
@@ -649,14 +647,14 @@ if __name__ == "__main__":
         linewidth=2,
         marker="o",
     )
-    ax[5].set_ylabel("Solar Radiation (W/m²)")
-    ax[5].set_title("Solar Radiation")
-    ax[5].grid()
+    ax[6].set_ylabel("Solar Radiation (W/m²)")
+    ax[6].set_title("Solar Radiation")
+    ax[6].grid()
 
-    ax[5].xaxis.set_minor_locator(AutoMinorLocator(2))
-    ax[5].yaxis.set_minor_locator(MultipleLocator(10))
-    ax[5].minorticks_on()
-    ax[5].legend(loc="best", fontsize=10)
+    ax[6].xaxis.set_minor_locator(AutoMinorLocator(2))
+    ax[6].yaxis.set_minor_locator(MultipleLocator(10))
+    ax[6].minorticks_on()
+    ax[6].legend(loc="best", fontsize=10)
 
     # ----------------------------------------------------------------------
     # Shared x-axis formatting and final layout

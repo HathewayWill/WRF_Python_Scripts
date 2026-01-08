@@ -451,7 +451,7 @@ if __name__ == "__main__":
     ###############################################################################
     # Create figure and subplots
     ###############################################################################
-    fig, ax = plt.subplots(6, 1, figsize=(20, 24), dpi=400, sharex=True)
+    fig, ax = plt.subplots(7, 1, figsize=(20, 24), dpi=400, sharex=True)
     fig.patch.set_facecolor("white")
 
     # ======================================================================
@@ -589,17 +589,13 @@ if __name__ == "__main__":
     )
 
     # ======================================================================
-    # 5. 1-hr Precipitation Rates (Imperial, in/hr)
+    # 5. 1-hr Rain Rate (Imperial, in/hr)
     # ======================================================================
-    ax4_primary = ax[4]
-    ax4_secondary = ax4_primary.twinx()
-
     time_nums = mdates.date2num(time_points)
-    bar_width = 0.01
-    offset = 0.006
-
-    bar_rain = ax4_primary.bar(
-        time_nums - offset,
+    bar_width = 0.02  # adjust if your timestep spacing is tight
+    
+    bar_rain = ax[4].bar(
+        time_nums,
         rain_rate_inch,
         color="green",
         label="1-hr Rain Rate (in/hr)",
@@ -608,8 +604,38 @@ if __name__ == "__main__":
         linewidth=0.5,
     )
 
-    bar_snow = ax4_secondary.bar(
-        time_nums + offset,
+    ax[4].set_ylabel("Rain Rate (in/hr)", fontsize=12)
+    ax[4].set_title("1-Hour Rain Rate", fontsize=14)
+    ax[4].grid()
+    ax[4].set_ylim(bottom=0.0)
+
+    ax[4].xaxis.set_minor_locator(AutoMinorLocator(2))
+    ax[4].yaxis.set_minor_locator(MultipleLocator(0.1))
+    ax[4].minorticks_on()
+    
+    for rect in bar_rain:
+        height = rect.get_height()
+        if height >= 0.01:
+            ax[4].text(
+                rect.get_x() + rect.get_width() / 2.0,
+                height,
+                f"{height:.2f}",
+                ha="center",
+                va="bottom",
+                fontsize=8,
+                color="black",
+            )
+    
+    ax[4].legend(loc="upper left", fontsize=10)
+    
+    # ======================================================================
+    # 6. 1-hr Snow Rate (Imperial, in/hr)
+    # ======================================================================
+    time_nums = mdates.date2num(time_points)
+    bar_width = 0.02  # adjust if your timestep spacing is tight
+    
+    bar_snow = ax[5].bar(
+        time_nums,
         snowh20_rate_inch,
         color="cyan",
         label="1-hr Snow Rate (in/hr)",
@@ -618,62 +644,35 @@ if __name__ == "__main__":
         edgecolor="black",
         linewidth=0.5,
     )
-
-    ax4_primary.set_ylabel("Rain Rate (in/hr)", color="black", fontsize=12)
-    ax4_secondary.set_ylabel("Snow Rate (in/hr)", color="black", fontsize=12)
-    ax4_primary.set_title("1-Hour Precipitation Rates", fontsize=14)
-
-    ax4_primary.grid()
-    ax4_primary.set_ylim(bottom=0.0)
-    ax4_secondary.set_ylim(bottom=0.0)
-
-    ax4_primary.xaxis.set_minor_locator(AutoMinorLocator(2))
-    ax4_primary.yaxis.set_minor_locator(MultipleLocator(0.1))
-    ax4_primary.minorticks_on()
-
-    ax4_secondary.yaxis.set_minor_locator(MultipleLocator(0.1))
-    ax4_secondary.minorticks_on()
-
-    # Numeric labels above bars (only for values ≥ 0.01 in/hr)
-    for rect in bar_rain:
-        height = rect.get_height()
-        if height >= 0.01:
-            ax4_primary.text(
-                rect.get_x() + rect.get_width() / 2.0,
-                height,
-                f"{height:.2f}",
-                ha="center",
-                va="bottom",
-                fontsize=10,
-                color="black",
-            )
-
+    
+    ax[5].set_ylabel("Snow Rate (in/hr)", fontsize=12)
+    ax[5].set_title("1-Hour Snow Rate", fontsize=14)
+    ax[5].grid()
+    ax[5].set_ylim(bottom=0.0)
+    
+    ax[5].xaxis.set_minor_locator(AutoMinorLocator(2))
+    ax[5].yaxis.set_minor_locator(MultipleLocator(0.1))
+    ax[5].minorticks_on()
+    
     for rect in bar_snow:
         height = rect.get_height()
         if height >= 0.01:
-            ax4_secondary.text(
+            ax[5].text(
                 rect.get_x() + rect.get_width() / 2.0,
                 height,
                 f"{height:.2f}",
                 ha="center",
                 va="bottom",
-                fontsize=10,
+                fontsize=8,
                 color="black",
             )
-
-    h_p, l_p = ax4_primary.get_legend_handles_labels()
-    h_s, l_s = ax4_secondary.get_legend_handles_labels()
-    ax4_primary.legend(
-        h_p + h_s,
-        l_p + l_s,
-        loc="upper left",
-        fontsize=10,
-    )
-
+    
+    ax[5].legend(loc="upper left", fontsize=10)
+    
     # ======================================================================
-    # 6. Solar Radiation
+    # 7. Solar Radiation
     # ======================================================================
-    ax[5].plot(
+    ax[6].plot(
         time_points,
         solar_rad_list,
         label="Solar Radiation (W/m²)",
@@ -681,14 +680,14 @@ if __name__ == "__main__":
         linewidth=2,
         marker="o",
     )
-    ax[5].set_ylabel("Solar Radiation (W/m²)")
-    ax[5].set_title("Solar Radiation")
-    ax[5].grid()
+    ax[6].set_ylabel("Solar Radiation (W/m²)")
+    ax[6].set_title("Solar Radiation")
+    ax[6].grid()
 
-    ax[5].xaxis.set_minor_locator(AutoMinorLocator(2))
-    ax[5].yaxis.set_minor_locator(MultipleLocator(10))
-    ax[5].minorticks_on()
-    ax[5].legend(loc="best", fontsize=10)
+    ax[6].xaxis.set_minor_locator(AutoMinorLocator(2))
+    ax[6].yaxis.set_minor_locator(MultipleLocator(10))
+    ax[6].minorticks_on()
+    ax[6].legend(loc="best", fontsize=10)
 
     # ======================================================================
     # Shared time axis formatting & figure title

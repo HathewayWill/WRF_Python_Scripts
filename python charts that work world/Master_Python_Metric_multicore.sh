@@ -209,6 +209,7 @@ d01_scripts=(
   "300hpa_wind_height_isotachs.py"
   "500hpa_wind_height_isotachs.py"
   "700hpa_wind_height_isotachs.py"
+  "700hpa_relative_humidity_slp_thickness.py"
   "850hpa_wind_height_isotachs.py"
   "850hpa_temp_advection_height_wind_speed_dir.py"
   "850hpa_frontogenesis.py"

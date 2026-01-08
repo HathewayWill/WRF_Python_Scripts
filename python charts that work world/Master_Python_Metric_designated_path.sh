@@ -361,8 +361,8 @@ d02_scripts=(
 
   "surface_windchill_degc_slp_wind_speed_dir.py"
   "surface_visibility_km.py"
-  "mixed_layer_lifted_index.py"
-  "surface_based_lifted_index.py"
+  #"mixed_layer_lifted_index.py"
+  #"surface_based_lifted_index.py"
 )
 
 run_scripts_in_parallel "d02" "${d02_scripts[@]}"

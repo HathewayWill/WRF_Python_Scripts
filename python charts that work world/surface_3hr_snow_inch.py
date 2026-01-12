@@ -445,69 +445,7 @@ def process_frame(args):
         _ = gaussian_filter(temp_np, sigma=1.0)
         _ = gaussian_filter(temp_850_np, sigma=1.0)
 
-        # --- SLP contours ---
-        SLP_levels = np.arange(870, 1090, 2)
-        slp_contours = ax.contour(
-            lons_np,
-            lats_np,
-            smooth_slp,
-            levels=SLP_levels,
-            colors="k",
-            linewidths=1.0,
-            transform=crs.PlateCarree(),
-        )
-        ax.clabel(slp_contours, inline=1, fontsize=10, fmt="%1.0f")
 
-        slp_min_loc = np.unravel_index(np.argmin(smooth_slp), smooth_slp.shape)
-        slp_max_loc = np.unravel_index(np.argmax(smooth_slp), smooth_slp.shape)
-
-        min_pressure = smooth_slp[slp_min_loc]
-        max_pressure = smooth_slp[slp_max_loc]
-
-        min_lat, min_lon = lats_np[slp_min_loc], lons_np[slp_min_loc]
-        max_lat, max_lon = lats_np[slp_max_loc], lons_np[slp_max_loc]
-
-        ax.text(
-            min_lon,
-            min_lat,
-            "L",
-            color="red",
-            fontsize=18,
-            ha="center",
-            va="center",
-            transform=crs.PlateCarree(),
-        )
-        ax.text(
-            max_lon,
-            max_lat,
-            "H",
-            color="blue",
-            fontsize=18,
-            ha="center",
-            va="center",
-            transform=crs.PlateCarree(),
-        )
-
-        ax.text(
-            min_lon,
-            min_lat - label_adjustment,
-            f"{min_pressure:.0f}",
-            color="black",
-            fontsize=12,
-            ha="center",
-            va="center",
-            transform=crs.PlateCarree(),
-        )
-        ax.text(
-            max_lon,
-            max_lat - label_adjustment,
-            f"{max_pressure:.0f}",
-            color="black",
-            fontsize=12,
-            ha="center",
-            va="center",
-            transform=crs.PlateCarree(),
-        )
 
         # 0 to 6 inches per 1 hour (original levels preserved)
         Snow_levels = np.array(

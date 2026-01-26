@@ -83,6 +83,9 @@ You will notice that some scripts have similar names. That is intentional. I dev
 * 925hpa_temp_degc_height_wind_speed_dir.py
 * 925hpa_wind_height_isotachs.py
 
+![wrf_d01_250hPa_WIND_Hgt_Isotachs](https://github.com/user-attachments/assets/9669eb3e-269f-456c-b7a7-0f8de5bef45c)
+
+
 ---
 
 ## 2) Moisture, Clouds, and Column Diagnostics
@@ -100,6 +103,9 @@ You will notice that some scripts have similar names. That is intentional. I dev
 * precipitable_water_cm.py
 * precipitable_water_inch.py
 
+![wrf_d02_Cloud_Top_Temp](https://github.com/user-attachments/assets/92bd61bc-dbb9-468d-b55d-ff2ff279290a)
+
+
 ---
 
 ## 3) Convective Environment and Severe Weather Diagnostics
@@ -109,6 +115,9 @@ You will notice that some scripts have similar names. That is intentional. I dev
 * convective_cape_cin.py
 * mixed_layer_lifted_index.py, slow to run, very computationally heavy
 * surface_based_lifted_index.py, slow to run, very computationally heavy
+
+![wrf_d02_CAPE_CIN](https://github.com/user-attachments/assets/dae3a5dc-5ab1-4e71-a86a-a627d6fa61f8)
+
 
 ---
 
@@ -136,6 +145,11 @@ You will notice that some scripts have similar names. That is intentional. I dev
 * surface_windchill_degc_slp_wind_speed_dir.py
 * surface_windchill_degf_slp_wind_speed_dir.py
 * road_icing_index.py
+
+![wrf_d02_SLP_WIND_Gust](https://github.com/user-attachments/assets/7eb83abf-eb7d-40a1-87cf-d9d236eca3a9)
+
+![wrf_d02_Surface_Visibility_miles_AFWA](https://github.com/user-attachments/assets/860f2a18-3994-47f5-b284-9be88c7f6192)
+
 
 ---
 
@@ -174,6 +188,9 @@ You will notice that some scripts have similar names. That is intentional. I dev
 * surface_total_water_equivalent_snow_depth_inch.py
 * surface_total_water_equivalent_snow_depth_mm.py
 
+![wrf_d02_3-hour_Total_Precip_SLP_Isotherm](https://github.com/user-attachments/assets/12b235b7-34cf-468f-a71c-76f1cd8e4b55)
+
+
 ---
 
 ## 6) Simulated Remote Sensing and Radar-Style Products
@@ -181,6 +198,9 @@ You will notice that some scripts have similar names. That is intentional. I dev
 **Description:** Simulated observational-style products intended to provide a radar-like view of convective structure and precipitation intensity derived from WRF fields. This is meant to help bridge the gap between model output and what forecasters are used to interpreting in real time.
 
 * surface_simulated_radar_reflectivity.py
+
+![wrf_d02_SFC_Simulated_dBZ](https://github.com/user-attachments/assets/9c4fc4de-8b5a-4708-a154-c44454de167b)
+
 
 ---
 
@@ -190,6 +210,9 @@ You will notice that some scripts have similar names. That is intentional. I dev
 
 * haines_index.py
 * c_haines_index.py
+
+![wrf_d02_CHaines_Index](https://github.com/user-attachments/assets/cda9909b-ed92-42c9-954f-ec5a71cdd17f)
+
 
 ---
 
@@ -205,6 +228,11 @@ You will notice that some scripts have similar names. That is intentional. I dev
 * vertical_wind_profile_4km.py
 * vertical_wind_relative_humidity_cross_section_height_pressure.py
 * vertical_wind_speed_cross_section_height_pressure.py
+
+![wrf_d02_SkewT_LogP](https://github.com/user-attachments/assets/be71126f-333d-4ab0-8370-78feec19ea96)
+
+<img width="5000" height="6000" alt="meteogram_Cape Canaveral, FL_imperial" src="https://github.com/user-attachments/assets/ede4775c-33fd-47b7-976d-6d4bd4b79d9b" />
+
 
 ---
 

@@ -34,6 +34,7 @@ from datetime import datetime
 import cartopy.feature as cfeature
 import geopandas as gpd
 import matplotlib as mpl
+from matplotlib.path import Path
 import matplotlib.pyplot as plt
 import metpy.calc as mpcalc
 import numpy as np
@@ -66,11 +67,20 @@ mpl.rcParams["figure.constrained_layout.use"] = False
 # =============================================================================
 
 SHOW_LAYOUT_GRID = False
+
 MAX_CITIES_ON_MAP = 30  # Max city labels on the map panel
 
 # Global table font-size configuration (tweak here to change all tables at once)
 TABLE_FONT_SIZE = 11
 TABLE_HEADER_FONT_SIZE = 12
+
+# =============================================================================
+# PARTIAL-THICKNESS NOMOGRAM BOUNDS (authoritative)
+# =============================================================================
+# x-axis: 850–700 hPa thickness (m)
+# y-axis: 1000–850 hPa thickness (m)
+PT_X_MIN, PT_X_MAX = 1525.0, 1560.0
+PT_Y_MIN, PT_Y_MAX = 1281.0, 1315.0
 
 # =============================================================================
 # TIME HANDLING HELPERS (v3 canonical)
@@ -303,7 +313,7 @@ def get_default_panel_layout():
         "hazard": grid_span(11, 3.50, 14, 7),
         "Surface": grid_span(14, 3.50, 16, 7),
         "map": grid_span(16, 3.50, 19, 7),
-        "storm_motion": grid_span(17.5, 8, 19, 10),
+        "storm_motion": grid_span(17.5, 7, 19, 9),
         "parcel_table": grid_span(1, 0.5, 7, 3.50),
         "env_summary": grid_span(7, 0.5, 11, 3.50),
         "shear_table": grid_span(11, 0.5, 19, 3.50),
@@ -612,109 +622,107 @@ def pressure_to_height_km(target_p_hpa, p_hpa, z_m):
 
 
 def get_partial_thickness_polygon_defs():
-    """Define polygons in (x, y) partial-thickness space for precip-type."""
-    snow = np.array(
-        [
-            [0, 0],
-            [0, 1537.375],
-            [1500, 1303],
-            [1532, 1298],
-            [1537, 1290],
-            [1542, 1278],
-            [1545, 1260],
-            [1755, 0],
-        ]
-    )
+    """
+    Polygon definitions aligned to the reference implementation.
 
-    unknown = np.array(
-        [
-            [0, 20000],
-            [0, 1537.375],
-            [1500, 1303],
-            [1532, 1298],
-            [1530, 1312],
-            [1538, 1312],
-            [1538, 20000],
-        ]
-    )
+    Axes:
+      x = 850–700 hPa thickness (m)
+      y = 1000–850 hPa thickness (m)
 
-    snow_rain = np.array(
-        [
-            [1530, 1312],
-            [1538, 1312],
-            [1543, 1290],
-            [1537, 1290],
-            [1532, 1298],
-        ]
-    )
+    Notes:
+      * Several vertices intentionally extend far outside the plotted window
+        to emulate open-ended regions.
+      * Do not clamp polygon vertices. Only clamp the test point.
+    """
+    x_far = 20000.0
+    y_far = 20000.0
+    x_floor = 0.0
+    y_floor = 0.0
 
-    wintry_mix = np.array(
-        [
-            [1538, 1312],
-            [1550, 1310],
-            [1550, 1290],
-            [1543, 1290],
-        ]
-    )
+    snow = np.array([
+        [x_floor, y_floor],
+        [x_floor, 1537.375],
+        [1500.0, 1303.0],
+        [1532.0, 1298.0],
+        [1537.0, 1290.0],
+        [1542.0, 1278.0],
+        [1545.0, 1260.0],
+        [1755.0, y_floor],
+    ])
 
-    rain = np.array(
-        [
-            [1538, 1312],
-            [1550, 1310],
-            [1580, 1314],
-            [20000, 3770],
-            [20000, 20000],
-            [1538, 20000],
-        ]
-    )
+    unknown = np.array([
+        [x_floor, y_far],
+        [x_floor, 1537.375],
+        [1500.0, 1303.0],
+        [1532.0, 1298.0],
+        [1530.0, 1312.0],
+        [1538.0, 1312.0],
+        [1538.0, y_far],
+    ])
 
-    snow_sleet = np.array(
-        [
-            [1537, 1290],
-            [1550, 1290],
-            [1550, 1282],
-            [1562, 1260],
-            [(24742 / 11), 0],
-            [1755, 0],
-            [1545, 1260],
-            [1542, 1278],
-        ]
-    )
+    snow_rain = np.array([
+        [1530.0, 1312.0],
+        [1538.0, 1312.0],
+        [1543.0, 1290.0],
+        [1537.0, 1290.0],
+        [1532.0, 1298.0],
+    ])
 
-    sleet_fzra = np.array(
-        [
-            [1550, 1293],
-            [1580, 1290],
-            [14480, 0],
-            [(24742 / 11), 0],
-            [1562, 1260],
-            [1550, 1282],
-            [1550, 1290],
-        ]
-    )
+    wintry_mix = np.array([
+        [1538.0, 1312.0],
+        [1550.0, 1310.0],
+        [1550.0, 1290.0],
+        [1543.0, 1290.0],
+    ])
 
-    fzra_sleet = np.array(
-        [
-            [1550, 1293],
-            [1580, 1290],
-            [1850, 1263],
-            [1580, 1299],
-            [1550, 1303],
-        ]
-    )
+    rain = np.array([
+        [1538.0, 1312.0],
+        [1550.0, 1310.0],
+        [1580.0, 1314.0],
+        [x_far, 3770.0],
+        [x_far, y_far],
+        [1538.0, y_far],
+    ])
 
-    fzra = np.array(
-        [
-            [1550, 1310],
-            [1580, 1314],
-            [20000, 3770],
-            [20000, 0],
-            [14480, 0],
-            [1850, 1263],
-            [1580, 1299],
-            [1550, 1303],
-        ]
-    )
+    snow_sleet = np.array([
+        [1537.0, 1290.0],
+        [1550.0, 1290.0],
+        [1550.0, 1282.0],
+        [1562.0, 1260.0],
+        [24742.0 / 11.0, y_floor],
+        [1755.0, y_floor],
+        [1545.0, 1260.0],
+        [1542.0, 1278.0],
+    ])
+
+    sleet_fzra = np.array([
+        [1550.0, 1293.0],
+        [1580.0, 1290.0],
+        [14480.0, y_floor],
+        [24742.0 / 11.0, y_floor],
+        [1562.0, 1260.0],
+        [1550.0, 1282.0],
+        [1550.0, 1290.0],
+    ])
+
+    fzra_sleet = np.array([
+        [1550.0, 1293.0],
+        [1580.0, 1290.0],
+        [1850.0, 1263.0],
+        [1580.0, 1299.0],
+        [1550.0, 1303.0],
+    ])
+
+    fzra = np.array([
+        [1550.0, 1310.0],
+        [1580.0, 1314.0],
+        [x_far, 3770.0],
+        [x_far, y_floor],
+        [14480.0, y_floor],
+        [1850.0, 1263.0],
+        [1580.0, 1299.0],
+        [1550.0, 1303.0],
+    ])
 
     return {
         "snow": snow,
@@ -744,6 +752,11 @@ def classify_precip_type_partial_thickness(
 
     Uses climo polygons and a saturation test in 1000–700 hPa.
     """
+
+    # Nomogram bounds used only to clamp the polygon test point
+    X_MIN, X_MAX = PT_X_MIN, PT_X_MAX
+    Y_MIN, Y_MAX = PT_Y_MIN, PT_Y_MAX
+
     p_hpa = pressure_profile.to("hPa").magnitude
     z_m = height_profile.to("m").magnitude
 
@@ -762,16 +775,26 @@ def classify_precip_type_partial_thickness(
         thickness_850_700 = mid_level_top - boundary_level
         thickness_1000_850 = boundary_level - low_level_bottom
 
+    # Build closed Paths for robust point-in-polygon tests in (x, y) space
     poly_defs = get_partial_thickness_polygon_defs()
-    snow_polygon = Polygon(poly_defs["snow"], closed=True)
-    unknown_polygon = Polygon(poly_defs["unknown"], closed=True)
-    snow_rain_polygon = Polygon(poly_defs["snow_rain"], closed=True)
-    wintry_mix_polygon = Polygon(poly_defs["wintry_mix"], closed=True)
-    rain_polygon = Polygon(poly_defs["rain"], closed=True)
-    snow_sleet_polygon = Polygon(poly_defs["snow_sleet"], closed=True)
-    sleet_fzra_polygon = Polygon(poly_defs["sleet_fzra"], closed=True)
-    fzra_sleet_polygon = Polygon(poly_defs["fzra_sleet"], closed=True)
-    fzra_polygon = Polygon(poly_defs["fzra"], closed=True)
+
+    def _as_closed_path(verts):
+        v = np.asarray(verts, dtype=float)
+        if v.ndim != 2 or v.shape[1] != 2:
+            return None
+        if not np.allclose(v[0], v[-1]):
+            v = np.vstack([v, v[0]])
+        return Path(v)
+
+    snow_path = _as_closed_path(poly_defs["snow"])
+    unknown_path = _as_closed_path(poly_defs["unknown"])
+    snow_rain_path = _as_closed_path(poly_defs["snow_rain"])
+    wintry_mix_path = _as_closed_path(poly_defs["wintry_mix"])
+    rain_path = _as_closed_path(poly_defs["rain"])
+    snow_sleet_path = _as_closed_path(poly_defs["snow_sleet"])
+    sleet_fzra_path = _as_closed_path(poly_defs["sleet_fzra"])
+    fzra_sleet_path = _as_closed_path(poly_defs["fzra_sleet"])
+    fzra_path = _as_closed_path(poly_defs["fzra"])
 
     # Saturation test (unchanged physics)
     is_saturated_anywhere = False
@@ -814,24 +837,28 @@ def classify_precip_type_partial_thickness(
         if np.isnan(thickness_850_700) or np.isnan(thickness_1000_850):
             precip_type = "UNKNOWN"
         else:
-            pt_point = [thickness_850_700, thickness_1000_850]
-            if snow_polygon.contains_point(pt_point):
+            # Clamp only for the polygon test, do not alter returned thickness values
+            x = float(np.clip(thickness_850_700, X_MIN, X_MAX))
+            y = float(np.clip(thickness_1000_850, Y_MIN, Y_MAX))
+            pt_point = (x, y)
+
+            if snow_path is not None and snow_path.contains_point(pt_point):
                 precip_type = "SNOW"
-            elif unknown_polygon.contains_point(pt_point):
+            elif unknown_path is not None and unknown_path.contains_point(pt_point):
                 precip_type = "UNKNOWN"
-            elif snow_rain_polygon.contains_point(pt_point):
+            elif snow_rain_path is not None and snow_rain_path.contains_point(pt_point):
                 precip_type = "SNOW+RAIN"
-            elif wintry_mix_polygon.contains_point(pt_point):
+            elif wintry_mix_path is not None and wintry_mix_path.contains_point(pt_point):
                 precip_type = "WINTRY MIX"
-            elif rain_polygon.contains_point(pt_point):
+            elif rain_path is not None and rain_path.contains_point(pt_point):
                 precip_type = "RAIN"
-            elif snow_sleet_polygon.contains_point(pt_point):
+            elif snow_sleet_path is not None and snow_sleet_path.contains_point(pt_point):
                 precip_type = "SNOW+SLEET"
-            elif sleet_fzra_polygon.contains_point(pt_point):
+            elif sleet_fzra_path is not None and sleet_fzra_path.contains_point(pt_point):
                 precip_type = "SLEET+FREEZING RAIN"
-            elif fzra_sleet_polygon.contains_point(pt_point):
+            elif fzra_sleet_path is not None and fzra_sleet_path.contains_point(pt_point):
                 precip_type = "FREEZING RAIN+SLEET"
-            elif fzra_polygon.contains_point(pt_point):
+            elif fzra_path is not None and fzra_path.contains_point(pt_point):
                 precip_type = "FREEZING RAIN"
             else:
                 precip_type = "UNKNOWN"
@@ -1052,6 +1079,116 @@ def classify_precip_type_hybrid(
         is_saturated,
         Tw_sfc,
     )
+
+
+def draw_partial_thickness_nomogram(
+    ax,
+    thickness_850_700,
+    thickness_1000_850,
+    precip_type_thick=None,
+    show_clamped=True,
+):
+    """
+    Draw a partial-thickness nomogram that matches the classifier polygons.
+
+    x-axis: 850–700 hPa thickness (m)
+    y-axis: 1000–850 hPa thickness (m)
+    """
+    poly_defs = get_partial_thickness_polygon_defs()
+
+    X_MIN, X_MAX = PT_X_MIN, PT_X_MAX
+    Y_MIN, Y_MAX = PT_Y_MIN, PT_Y_MAX
+
+    ax.set_xlim(X_MIN, X_MAX)
+    ax.set_ylim(Y_MIN, Y_MAX)
+    ax.set_xlabel("850–700 hPa thickness (m)")
+    ax.set_ylabel("1000–850 hPa thickness (m)")
+    ax.grid(True, linewidth=0.6, alpha=0.6, linestyle="--")
+
+    face = {
+        "snow": (0.2, 0.4, 1.0, 0.10),
+        "unknown": (0.0, 0.0, 0.0, 0.06),
+        "snow_rain": (0.2, 0.8, 0.9, 0.10),
+        "wintry_mix": (0.6, 0.6, 0.6, 0.10),
+        "rain": (0.2, 0.9, 0.2, 0.10),
+        "snow_sleet": (0.6, 0.2, 0.9, 0.10),
+        "sleet_fzra": (1.0, 0.5, 0.0, 0.10),
+        "fzra_sleet": (1.0, 0.3, 0.3, 0.10),
+        "fzra": (1.0, 0.0, 0.0, 0.08),
+    }
+
+    edge = {
+        "snow": "blue",
+        "unknown": "black",
+        "snow_rain": "teal",
+        "wintry_mix": "gray",
+        "rain": "green",
+        "snow_sleet": "slategray",
+        "sleet_fzra": "darkorange",
+        "fzra_sleet": "crimson",
+        "fzra": "red",
+    }
+
+    for name, verts in poly_defs.items():
+        v = np.asarray(verts, dtype=float)
+        ax.add_patch(
+            Polygon(
+                v,
+                closed=True,
+                facecolor=face.get(name, (0, 0, 0, 0.0)),
+                edgecolor=edge.get(name, "black"),
+                linewidth=1.0,
+                zorder=1,
+            )
+        )
+
+    labels = {
+        "snow": (1527.0, 1287.0, "Snow", dict(ha="left", va="bottom")),
+        "unknown": (1525.0, 1314.0, "Unknown", dict(ha="left", va="top")),
+        "snow_rain": (1536.0, 1300.0, "Snow +\nRain", dict(ha="center", va="center")),
+        "wintry_mix": (1545.0, 1300.0, "Wintry\nMix", dict(ha="center", va="center")),
+        "rain": (1554.0, 1314.0, "Rain", dict(ha="right", va="top")),
+        "snow_sleet": (1544.0, 1285.0, "Snow+\nSleet", dict(ha="center", va="center")),
+        "sleet_fzra": (1555.0, 1285.0, "Sleet+\nFrz. Rain", dict(ha="center", va="center")),
+        "fzra_sleet": (1555.0, 1295.0, "Frz. Rain+\nSleet", dict(ha="center", va="center")),
+        "fzra": (1555.0, 1305.0, "Frz. Rain", dict(ha="center", va="center")),
+    }
+    for _, (x, y, text, kw) in labels.items():
+        ax.text(x, y, text, fontsize=8, zorder=2, alpha=0.9, **kw)
+
+    x_raw = float(thickness_850_700) if np.isfinite(thickness_850_700) else np.nan
+    y_raw = float(thickness_1000_850) if np.isfinite(thickness_1000_850) else np.nan
+
+    if np.isfinite(x_raw) and np.isfinite(y_raw):
+        ax.plot(
+            x_raw,
+            y_raw,
+            marker="o",
+            markersize=5,
+            linestyle="None",
+            zorder=10,
+            label="Raw",
+        )
+
+        if show_clamped:
+            x_c = float(np.clip(x_raw, X_MIN, X_MAX))
+            y_c = float(np.clip(y_raw, Y_MIN, Y_MAX))
+            ax.plot(
+                x_c,
+                y_c,
+                marker="*",
+                markersize=9,
+                linestyle="None",
+                zorder=11,
+                label="Clamped",
+            )
+
+
+    title = "Partial-thickness nomogram"
+    if precip_type_thick:
+        title += f"\nClassified: {precip_type_thick}"
+    ax.set_title(title, fontsize=10)
+
 
 
 # =============================================================================
@@ -1590,7 +1727,7 @@ def draw_hazard_panel(
 
     ax_hazard.text(
         0.5,
-        0.90,
+        0.95,
         "Possible\nHazard Type:",
         ha="center",
         va="top",
@@ -1601,7 +1738,7 @@ def draw_hazard_panel(
     )
     ax_hazard.text(
         0.5,
-        0.68,
+        0.85,
         hazard_label,
         ha="center",
         va="top",
@@ -1630,18 +1767,18 @@ def draw_hazard_panel(
 
     ax_hazard.text(
         0.5,
-        0.42,
+        0.75,
         "Precip Type:",
         ha="center",
         va="top",
         fontsize=12,
-        color="green",
+        color="black",
         fontweight="bold",
         transform=ax_hazard.transAxes,
     )
     ax_hazard.text(
         0.5,
-        0.20,
+        0.70,
         precip_text,
         ha="center",
         va="top",
@@ -1649,6 +1786,16 @@ def draw_hazard_panel(
         color="green",
         transform=ax_hazard.transAxes,
     )
+    #Partial-Thickness grid box
+    ax_nom = ax_hazard.inset_axes([0.06, 0.12, 0.88, 0.40])
+    draw_partial_thickness_nomogram(
+        ax_nom,
+        thickness_850_700,
+        thickness_1000_850,
+        precip_type_thick=precip_type_thickness,
+        show_clamped=True,
+    )
+    ax_nom.tick_params(labelsize=7)
 
 
 # =============================================================================
@@ -2895,7 +3042,6 @@ def process_frame(args):
         # Save figure: filename uses valid_dt so alphabetical == chronological
         # ------------------------------------------------------------------
         if valid_dt is not None:
-            # v3 canonical timestamp: YYYYMMDDHHMMSS
             file_time_tag = valid_dt.strftime("%Y%m%d%H%M%S")
         else:
             file_time_tag = "unknown"
@@ -2935,7 +3081,6 @@ def create_gif(path_figures, image_folder, domain):
         print("No PNG files found for GIF creation.")
         return
 
-    # Filenames contain YYYYMMDDHHMMSS, so simple sort is chronological
     png_files_sorted = sorted(png_files)
     print("Creating .gif file from sorted .png files")
 
@@ -2985,7 +3130,6 @@ def main():
         print("Invalid latitude/longitude; please use decimal degrees.")
         sys.exit(1)
 
-    # v3-style output root
     path_figures = f"wrf_SkewT_LogP_{city}_Lat_{lat}_Long_{lon}"
     image_folder = os.path.join(path_figures, "Images")
     animation_folder = os.path.join(path_figures, "Animation")
@@ -3000,7 +3144,6 @@ def main():
         print("No WRF output files found matching pattern.")
         return
 
-    # Discover all (file, time_index) frames
     frames = discover_frames(ncfile_paths)
     if not frames:
         print("No timesteps found in provided WRF files.")
@@ -3027,3 +3170,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

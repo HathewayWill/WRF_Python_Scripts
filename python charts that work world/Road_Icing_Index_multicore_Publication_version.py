@@ -737,24 +737,14 @@ def process_wrf_file(args):
 
     # Add gridlines
     gl = ax.gridlines(
-        crs=ccrs.PlateCarree(),
-        draw_labels=True,
-        linestyle="--",
-        color="black",
-        alpha=0.5,
+        crs=ccrs.PlateCarree(), draw_labels=True, linestyle="--", alpha=0.5
     )
-
     gl.xlabels_top = False
     gl.xlabels_bottom = True
     gl.ylabels_right = False
     gl.ylabels_left = True
-
     gl.xformatter = LONGITUDE_FORMATTER
     gl.yformatter = LATITUDE_FORMATTER
-
-    gl.x_inline = False
-    gl.top_labels = False
-    gl.right_labels = False
 
     ####################################################
     # Road Icing Index Color Table (Minimal to Severe)

@@ -472,7 +472,7 @@ def process_frame(args):
         )
 
         plt.title(
-            f"Valid: {valid_dt:%HZ %Y-%m-%d}",
+            f"Valid: {valid_dt:%H:%M:%SZ %Y-%m-%d}",
             loc="right",
             fontsize=13,
         )

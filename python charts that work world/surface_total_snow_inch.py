@@ -294,7 +294,7 @@ features = [
     ("physical", "10m", cfeature.COLORS["water"], "lightgrey", 0.75, "lakes", 0),
     ("cultural", "10m", "none", "grey", 1.00, "admin_1_states_provinces", 2),
     ("cultural", "10m", "none", "black", 1.50, "admin_0_countries", 2),
-    # ("cultural", "10m", "none", "black", 0.60, "admin_2_counties", 2, 0.6),
+    ("cultural", "10m", "none", "black", 0.60, "admin_2_counties", 2, 0.6),
     # ("physical", "10m", "none", cfeature.COLORS["water"], None, "rivers_lake_centerlines"),
     # ("physical", "10m", "none", cfeature.COLORS["water"], None, "rivers_north_america", None), 0.75),
     # ("physical", "10m", "none", cfeature.COLORS["water"], None, "rivers_australia", None), 0.75),

@@ -468,7 +468,7 @@ def process_frame(args):
             fontsize=13,
         )
         plt.title(
-            f"Valid: {valid_dt:%HZ %Y-%m-%d}",
+            f"Valid: {valid_dt:%H:%M:%SZ %Y-%m-%d}",
             loc="right",
             fontsize=13,
         )

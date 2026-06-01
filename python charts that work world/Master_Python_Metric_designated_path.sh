@@ -95,12 +95,7 @@ conda activate wrf-python || { echo "Failed to activate conda environment."; exi
 # Define locations
 ###############################################################################
 declare -A locations=(
-    ["Auckland, NZ"]="-36.8485,174.7633"    # Largest city in New Zealand
-    ["Wellington, NZ"]="-41.2865,174.7762"  # Capital city of New Zealand
-    ["Hamilton, NZ"]="-37.7870,175.2793"    # Major inland city in Waikato region
-    ["Tauranga, NZ"]="-37.6860,176.1667"    # Coastal city in the Bay of Plenty region
 )
-
 
 ###############################################################################
 # Helper function: run a list of gridded scripts in parallel for one domain
@@ -311,7 +306,6 @@ d01_scripts=(
   "cloud_top_temperature.py"
   "precipitable_water_cm.py"
   "cloud_top_temperature_rainbow.py"
-  "Road_Icing_Index_multicore_Publication_version.py"
 )
 
 run_scripts_in_parallel "d01" "${d01_scripts[@]}"
@@ -326,12 +320,14 @@ d02_scripts=(
   "cloud_frac_mid_meters.py"
   "cloud_top_temperature.py"
   "precipitable_water_cm.py"
-  
-  "Road_Icing_Index_multicore_Publication_version.py"
 
   "surface_1hr_precip_mm_slp_isotherm.py"
   "surface_1hr_snow_mm_slp_isotherm.py"
   "surface_1hr_water_equivalent_snow_mm_slp_isotherm.py"
+
+  "surface_24hr_precip_mm.py"
+  "surface_24hr_snow_mm.py"
+  "surface_24hr_water_equivalent_snow_mm.py"
 
   "surface_3hr_precip_mm.py"
   "surface_3hr_snow_mm.py"
@@ -360,8 +356,7 @@ d02_scripts=(
 
   "surface_windchill_degc_slp_wind_speed_dir.py"
   "surface_visibility_km.py"
-  #"mixed_layer_lifted_index.py"
-  #"surface_based_lifted_index.py"
+
 )
 
 run_scripts_in_parallel "d02" "${d02_scripts[@]}"

@@ -581,7 +581,9 @@ def process_frame(args):
 
         rain_map = plt.matplotlib.colors.ListedColormap(color_map_rgb[:-1])
         rain_map.set_over(color_map_rgb[-1])
-        rain_norm = plt.matplotlib.colors.BoundaryNorm(precip_levels, rain_map.N,clip=False)
+        rain_norm = plt.matplotlib.colors.BoundaryNorm(
+            precip_levels, rain_map.N, clip=False
+        )
 
         precip_contour = ax.contourf(
             lons_np,
@@ -630,7 +632,7 @@ def process_frame(args):
         plt.savefig(
             os.path.join(image_folder, file_out),
             bbox_inches="tight",
-            dpi=150,
+            dpi=100,
         )
 
         plt.close(fig)
@@ -772,7 +774,7 @@ if __name__ == "__main__":
         gif_path,
         save_all=True,
         append_images=images[1:],
-        duration=800,
+        duration=500,
         loop=0,
     )
 

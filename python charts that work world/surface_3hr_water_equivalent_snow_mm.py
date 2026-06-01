@@ -13,8 +13,7 @@ v3 pattern:
 
 Important fixes:
     * Sort frames by valid time before linking “idx-2”.
-    * Fix wrf.vinterp multiprocessing shape/time mismatch by making the field
-      passed to vinterp time-consistent (slice to this frame + timeidx=time_index).
+    * Avoid unused 850-hPa temperature interpolation, which can fail when wrf-python receives a squeezed/non-3D field.
     * Includes a dateline/polar continuity helper (safe for worldwide/polar domains).
 """
 
@@ -50,7 +49,7 @@ from metpy.units import units
 from netCDF4 import Dataset
 from PIL import Image
 from scipy.ndimage import gaussian_filter
-from wrf import ALL_TIMES, to_np
+from wrf import to_np
 
 warnings.filterwarnings("ignore")
 
@@ -326,8 +325,6 @@ def process_frame(args):
         else:
             three_hour_snow_mm = np.zeros_like(to_np(total_snow_mm))
 
-
-
         # Lat/lon per frame
         lats, lons = wrf.latlon_coords(slp)
         (
@@ -344,9 +341,9 @@ def process_frame(args):
         # numpy + continuity
         slp_np = to_np(slp)
         snow_np = to_np(three_hour_snow_mm)
-        lats_np, lons_np, slp_np, snow_np= (
-            handle_domain_continuity_and_polar_mask(
-                lats_np, lons_np, slp_np, snow_np)
+
+        lats_np, lons_np, slp_np, snow_np = handle_domain_continuity_and_polar_mask(
+            lats_np, lons_np, slp_np, snow_np
         )
 
         # Figure
@@ -375,7 +372,72 @@ def process_frame(args):
         # Smooth fields (same sigmas)
         smooth_slp = gaussian_filter(slp_np, sigma=5.0)
 
-       
+        # SLP contours
+        contour_interval = 4 if (avg_dx_km >= 9 or avg_dy_km >= 9) else 2
+        SLP_levels = np.arange(870, 1090, contour_interval)
+
+        slp_contours = ax.contour(
+            lons_np,
+            lats_np,
+            smooth_slp,
+            levels=SLP_levels,
+            colors="k",
+            linewidths=1.0,
+            transform=crs.PlateCarree(),
+        )
+        ax.clabel(slp_contours, inline=1, fontsize=10, fmt="%1.0f")
+
+        # H/L
+        slp_min_loc = np.unravel_index(np.argmin(smooth_slp), smooth_slp.shape)
+        slp_max_loc = np.unravel_index(np.argmax(smooth_slp), smooth_slp.shape)
+
+        min_pressure = smooth_slp[slp_min_loc]
+        max_pressure = smooth_slp[slp_max_loc]
+
+        min_lat, min_lon = lats_np[slp_min_loc], lons_np[slp_min_loc]
+        max_lat, max_lon = lats_np[slp_max_loc], lons_np[slp_max_loc]
+
+        ax.text(
+            min_lon,
+            min_lat,
+            "L",
+            color="red",
+            fontsize=18,
+            ha="center",
+            va="center",
+            transform=crs.PlateCarree(),
+        )
+        ax.text(
+            max_lon,
+            max_lat,
+            "H",
+            color="blue",
+            fontsize=18,
+            ha="center",
+            va="center",
+            transform=crs.PlateCarree(),
+        )
+
+        ax.text(
+            min_lon,
+            min_lat - label_adjustment,
+            f"{min_pressure:.0f}",
+            color="black",
+            fontsize=12,
+            ha="center",
+            va="center",
+            transform=crs.PlateCarree(),
+        )
+        ax.text(
+            max_lon,
+            max_lat - label_adjustment,
+            f"{max_pressure:.0f}",
+            color="black",
+            fontsize=12,
+            ha="center",
+            va="center",
+            transform=crs.PlateCarree(),
+        )
 
         # 3-hour snow (mm, 10:1 ratio) filled contours
         Snow_levels = np.array([5, 10, 25, 50, 75, 100, 150, 200, 250, 300, 350, 400])
@@ -567,7 +629,7 @@ if __name__ == "__main__":
         gif_path,
         save_all=True,
         append_images=images[1:],
-        duration=800,
+        duration=500,
         loop=0,
     )
 

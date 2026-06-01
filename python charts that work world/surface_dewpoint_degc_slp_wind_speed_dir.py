@@ -825,7 +825,7 @@ if __name__ == "__main__":
         gif_path,
         save_all=True,
         append_images=images[1:],
-        duration=800,
+        duration=500,
         loop=0,
     )
 

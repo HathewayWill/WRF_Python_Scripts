@@ -452,7 +452,7 @@ def create_gif(image_folder, animation_folder, domain):
         gif_path,
         save_all=True,
         append_images=images[1:],
-        duration=800,
+        duration=500,
         loop=0,
     )
 
@@ -627,7 +627,7 @@ def process_frame(args):
             fontsize=13,
         )
         plt.title(
-            f"Valid: {valid_dt:%H:%M:%SZ %Y-%m-%d}",
+            f"Valid: {valid_dt:%HZ %Y-%m-%d}",
             loc="right",
             fontsize=13,
         )
@@ -639,7 +639,7 @@ def process_frame(args):
         plt.savefig(
             os.path.join(images_folder, file_out),
             bbox_inches="tight",
-            dpi=150,
+            dpi=100,
         )
         plt.close(fig)
 

@@ -472,7 +472,7 @@ def process_frame(args):
         )
 
         plt.title(
-            f"Valid: {valid_dt:%H:%M:%SZ %Y-%m-%d}",
+            f"Valid: {valid_dt:%HZ %Y-%m-%d}",
             loc="right",
             fontsize=13,
         )
@@ -483,7 +483,7 @@ def process_frame(args):
                 path_figures, "Images", f"wrf_{domain}_850hPa_TADV_{fname}.png"
             ),
             bbox_inches="tight",
-            dpi=150,
+            dpi=100,
         )
 
         plt.close(fig)
@@ -541,7 +541,7 @@ if __name__ == "__main__":
         os.path.join(animation_folder, f"wrf_{domain}_850hPa_TADV.gif"),
         save_all=True,
         append_images=images[1:],
-        duration=800,
+        duration=500,
         loop=0,
     )
 

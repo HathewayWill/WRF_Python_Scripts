@@ -660,7 +660,7 @@ def process_frame(args):
         plt.savefig(
             os.path.join(image_folder, file_out),
             bbox_inches="tight",
-            dpi=150,
+            dpi=100,
         )
 
         plt.close(fig)

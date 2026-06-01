@@ -547,7 +547,7 @@ def process_frame(args):
             loc="left",
             fontsize=13,
         )
-        plt.title(f"Valid: {valid_dt:%H:%M:%SZ %Y-%m-%d}", loc="right", fontsize=13)
+        plt.title(f"Valid: {valid_dt:%HZ %Y-%m-%d}", loc="right", fontsize=13)
 
         # Inset map: polar-aware + WRF projection
         cart_proj = wrf.get_cartopy(ter)
@@ -659,7 +659,7 @@ def create_gif(path_figures, domain):
         gif_path,
         save_all=True,
         append_images=images[1:],
-        duration=800,
+        duration=500,
         loop=0,
     )
 

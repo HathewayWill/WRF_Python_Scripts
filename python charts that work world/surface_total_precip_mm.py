@@ -406,7 +406,6 @@ def process_frame(args):
         # Contour interval left unchanged
         contour_interval = 2
 
-
         # ---------------------------------------------------------------------
         # Dateline continuity and polar masking (v9 canonical helper)
         # ---------------------------------------------------------------------
@@ -469,6 +468,7 @@ def process_frame(args):
                 200,
                 250,
                 300,
+                350,
             ]
         )
 
@@ -498,7 +498,9 @@ def process_frame(args):
 
         rain_map = plt.matplotlib.colors.ListedColormap(color_map_rgb[:-1])
         rain_map.set_over(color_map_rgb[-1])
-        rain_norm = plt.matplotlib.colors.BoundaryNorm(precip_levels, rain_map.N,clip=False)
+        rain_norm = plt.matplotlib.colors.BoundaryNorm(
+            precip_levels, rain_map.N, clip=False
+        )
 
         precip_contour = ax.contourf(
             lons_np,

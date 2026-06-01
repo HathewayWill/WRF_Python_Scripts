@@ -1,69 +1,19 @@
 #!/usr/bin/env python3
 """
-925hPa_T_Wind_Hgt.py
+Surface_Layer_LI_multicore_v3.py
 
-Plot WRF 925-hPa wind barbs (knots), temperature (°C), and
-925-hPa geopotential height (dm) on a Cartopy map.
+Plot WRF surface-layer Lifted Index (K), computed using a moist-adiabatic
+parcel profile launched from the lowest layer above the surface.
 
 This script can handle:
     * Multiple wrfout_<domain>* files, each with one or more timesteps.
     * A single wrfout file containing many timesteps.
+    * Mixed layouts.
 
-It does NOT assume the domain is static:
-    * For each timestep, lat/lon, grid spacing, and extent are
-      recomputed from the WRF fields. This automatically works
-      for both static nests and moving/vortex-following nests.
-
--------------------------------------------------------------------------------
-Preserved documentation from the pre-golden script (moved out of canonical defs)
--------------------------------------------------------------------------------
-
-Add a Natural Earth feature to a Cartopy axis.
-
-Extract a valid time from a WRF output filename as a fallback.
-
-Handles filenames of the form:
-    wrfout_d01_YYYY-MM-DD_HH:MM:SS
-    wrfout_d01_YYYY-MM-DD_HH_MM_SS
-
-If parsing fails, uses file modification time.
-
-Get the valid time for a given time index from the WRF file.
-
-Preferred: use wrf.extract_times (uses model time metadata).
-Fallback: parse from wrfout filename.
-
-Given 2D latitude/longitude arrays, compute:
-
-    lats_np, lons_np       : numpy arrays
-    avg_dx_km, avg_dy_km   : average grid spacing (km)
-    extent_adjustment      : padding for map extent
-    label_adjustment       : offset for labels (e.g., H/L or pressure values)
-
-This is recomputed per timestep, which is safe for both static and
-moving/vortex-following nests.
-
-Add latitude/longitude gridlines with consistent styling and labels.
-
-Call this after setting the map extent.
-
-Subset and thin cities, then plot them on the map.
-
-- Subsets cities to the current domain extent.
-- Sorts by POP_MAX and keeps the top 150.
-- Thins them so they are at least a minimum distance apart.
-- Plots city markers and labels.
-
-Discover all (file, time_index) combinations to plot.
-
-Supports:
-    * Many wrfout_<domain>* files, each with one or more Time steps.
-    * A single wrfout file containing multiple Time steps.
-
-Returns
--------
-frames : list of tuples
-    Each tuple is (ncfile_path, time_index).
+For each (file, time_index) frame:
+    * All geometry (lat/lon, grid spacing, extent, cities) is recomputed.
+    * No geometry is cached across frames, so this is safe for static and
+      moving/vortex-following nests.
 """
 
 ###############################################################################
@@ -89,7 +39,7 @@ from metpy.units import units
 from netCDF4 import Dataset
 from PIL import Image
 from scipy.ndimage import gaussian_filter
-from wrf import ALL_TIMES, to_np
+from wrf import ALL_TIMES, to_np  # ALL_TIMES kept for consistency with other scripts
 
 ###############################################################################
 # Warning suppression
@@ -98,6 +48,11 @@ warnings.filterwarnings("ignore")
 
 ###############################################################################
 # Canonical helper function block (v9 – contiguous, order-locked)
+#
+# Notes:
+# - Canonical helpers below are verbatim per playbook (no code altered).
+# - Additional non-canonical helpers (LI computation) are included here to keep
+#   all helper defs contiguous per playbook structure rule.
 ###############################################################################
 
 
@@ -339,10 +294,176 @@ def handle_domain_continuity_and_polar_mask(lats_np, lons_np, *fields):
     return (lats_np, lons_np, *fields_out)
 
 
+def _compute_li_block(
+    j_start,
+    j_end,
+    pres_np,
+    temp_np,
+    dew_np,
+    psfc_np,
+    t500_np,
+    lowest_layer_dp,
+):
+    """
+    Worker function to compute LI for a block of latitude rows [j_start, j_end).
+
+    Physics matches original implementation.
+    """
+    nz, ny, nx = pres_np.shape
+    ny_block = j_end - j_start
+    li_block = np.full((ny_block, nx), np.nan, dtype=np.float32)
+
+    for local_j, j in enumerate(range(j_start, j_end)):
+        for i in range(nx):
+            p_col = pres_np[:, j, i]
+            T_col = temp_np[:, j, i]
+            Td_col = dew_np[:, j, i]
+            psfc_here = psfc_np[j, i]
+
+            # Convert masked arrays to plain ndarrays with NaNs where masked
+            if np.ma.isMaskedArray(p_col):
+                p_vals = p_col.filled(np.nan)
+            else:
+                p_vals = np.array(p_col, dtype=float)
+
+            if np.ma.isMaskedArray(T_col):
+                T_vals = T_col.filled(np.nan)
+            else:
+                T_vals = np.array(T_col, dtype=float)
+
+            if np.ma.isMaskedArray(Td_col):
+                Td_vals = Td_col.filled(np.nan)
+            else:
+                Td_vals = np.array(Td_col, dtype=float)
+
+            # Skip bad/missing columns
+            if (
+                np.any(np.isnan(p_vals))
+                or np.any(np.isnan(T_vals))
+                or np.any(np.isnan(Td_vals))
+                or np.isnan(psfc_here)
+            ):
+                continue
+
+            # Attach units for temperature/dewpoint
+            T_q = T_vals * units.kelvin
+            Td_q = Td_vals * units.kelvin
+
+            # Lowest `lowest_layer_dp` hPa above the surface
+            layer_mask = (p_vals <= psfc_here) & (p_vals >= psfc_here - lowest_layer_dp)
+
+            if np.any(layer_mask):
+                T0_q = T_q[layer_mask].mean()
+                Td0_q = Td_q[layer_mask].mean()
+            else:
+                # Fallback: use lowest model level
+                T0_q = T_q[0]
+                Td0_q = Td_q[0]
+
+            # Sort pressure from high -> low (required by parcel_profile)
+            sort_idx = np.argsort(p_vals)[::-1]  # largest p -> smallest
+            p_sorted_vals = p_vals[sort_idx]
+            p_sorted = p_sorted_vals * units.hectopascal
+
+            # Compute parcel profile along this sorted pressure column
+            parcel_T = mpcalc.parcel_profile(p_sorted, T0_q, Td0_q)  # K
+
+            # Interpolate parcel T to 500 hPa
+            # np.interp expects x ascending, so flip arrays (low -> high)
+            p_asc = p_sorted.magnitude[::-1]  # hPa ascending
+            T_parcel_asc = parcel_T.to("kelvin").magnitude[::-1]  # K
+
+            # Require that 500 hPa be within the pressure range
+            if (500.0 < p_asc.min()) or (500.0 > p_asc.max()):
+                continue
+
+            T_parcel_500 = np.interp(500.0, p_asc, T_parcel_asc)  # K
+            T_env_500 = t500_np[j, i]  # K
+
+            # LI = T_env(500) - T_parcel(500)
+            li_block[local_j, i] = T_env_500 - T_parcel_500
+
+    return j_start, j_end, li_block
+
+
+def _compute_li_block_wrapper(args):
+    return _compute_li_block(*args)
+
+
+def lifted_index(
+    pressure,
+    temperature,
+    dewpoint,
+    psfc_hpa,
+    T500,
+    smooth_sigma=2.0,
+    lowest_layer_dp=25.0,
+):
+    """
+    Compute Lifted Index (LI) using full vertical profiles and a moist-adiabatic
+    parcel lift.
+
+    LI = T_env(500 hPa) - T_parcel(500 hPa)
+
+    Physics and parameters match the original implementation.
+    """
+    # Convert to numpy (may be masked arrays)
+    pres_np = to_np(pressure)  # (nz, ny, nx), hPa
+    temp_np = to_np(temperature)  # (nz, ny, nx), K
+    dew_np = to_np(dewpoint)  # (nz, ny, nx), K
+    psfc_np = to_np(psfc_hpa)  # (ny, nx), hPa
+
+    # Environmental 500-hPa temperature field (optionally smoothed)
+    t500_np = to_np(T500)  # (ny, nx), K
+    if smooth_sigma is not None:
+        t500_np = gaussian_filter(t500_np, sigma=smooth_sigma)
+
+    nz, ny, nx = pres_np.shape
+    li_np = np.full((ny, nx), np.nan, dtype=np.float32)
+
+    # Use fixed 4 workers as in original
+    n_workers = 4
+
+    # Determine row blocks for each worker to reduce overhead
+    rows_per_worker = max(1, ny // n_workers)
+    blocks = []
+    start = 0
+    while start < ny:
+        end = min(start + rows_per_worker, ny)
+        blocks.append((start, end))
+        start = end
+
+    args_list = [
+        (
+            j_start,
+            j_end,
+            pres_np,
+            temp_np,
+            dew_np,
+            psfc_np,
+            t500_np,
+            lowest_layer_dp,
+        )
+        for (j_start, j_end) in blocks
+    ]
+
+    # Parallelize over latitude row blocks (executor.map pattern)
+    with ProcessPoolExecutor(max_workers=n_workers) as executor:
+        for j_start, j_end, li_block in executor.map(
+            _compute_li_block_wrapper, args_list
+        ):
+            li_np[j_start:j_end, :] = li_block
+
+    return li_np
+
+
 ###############################################################################
-# Natural Earth features (v9 canonical – verbatim, order-locked)
+# Natural Earth features (module scope)
 ###############################################################################
-# List of Natural Earth features to add (keep commented-out options intact)
+###############################################################################
+# Map features, Natural Earth configuration, and cities
+###############################################################################
+## List of Natural Earth features to add (keep commented-out options intact)
 features = [
     ("physical", "10m", cfeature.COLORS["land"], "black", 0.50, "minor_islands"),
     ("physical", "10m", "none", "black", 0.50, "coastline"),
@@ -350,7 +471,7 @@ features = [
     ("physical", "10m", cfeature.COLORS["water"], "lightgrey", 0.75, "lakes", 0),
     ("cultural", "10m", "none", "grey", 1.00, "admin_1_states_provinces", 2),
     ("cultural", "10m", "none", "black", 1.50, "admin_0_countries", 2),
-    # ("cultural", "10m", "none", "black", 0.60, "admin_2_counties", 2, 0.6),
+    ("cultural", "10m", "none", "black", 0.60, "admin_2_counties", 2, 0.6),
     # ("physical", "10m", "none", cfeature.COLORS["water"], None, "rivers_lake_centerlines"),
     # ("physical", "10m", "none", cfeature.COLORS["water"], None, "rivers_north_america", None), 0.75),
     # ("physical", "10m", "none", cfeature.COLORS["water"], None, "rivers_australia", None), 0.75),
@@ -366,29 +487,25 @@ features = [
 ###############################################################################
 # Cities (module scope)
 ###############################################################################
+## Load populated places (cities) once per worker process.
 cities = gpd.read_file(
     "https://naciscdn.org/naturalearth/10m/cultural/ne_10m_populated_places.zip"
 )
 
 
 ###############################################################################
-# 925 hPa T/Wind/Height plotting for one (file, time_index) frame
+# Frame processing: one (file, time_index) pair
 ###############################################################################
 def process_frame(args):
     """
     Process a single frame: one file and one time index.
 
     Steps:
-        * Read WRF variables (u, v, T, z, p) at this time.
-        * Vertically interpolate to 925 hPa.
-        * Smooth height and temperature fields.
-        * Convert winds to knots and plot wind barbs.
-        * Plot:
-            - 925 hPa heights (dm) as contours.
-            - 925 hPa temperature (°C) as filled contours.
-            - 925 hPa wind barbs (knots), density adapted to grid size and
-              colored for contrast against the background.
-        * Save a PNG file named with the valid time.
+        * Read WRF variables (pressure, temp, dewpoint, geopt, PSFC) at this time.
+        * Vertically interpolate to get 500-hPa T and Z (T500, Z500).
+        * Compute lifted index using moist-adiabatic parcel profile.
+        * Smooth LI and plot contours on a Cartopy map.
+        * Save a PNG file named with the valid time (for GIF sorting).
     """
     ncfile_path, time_index, domain, path_figures = args
 
@@ -400,113 +517,87 @@ def process_frame(args):
         print(f"Plotting data: {valid_dt:%Y/%m/%d %H:%M:%S} UTC")
 
         # -------------------------------------------------------------------------
-        # Get base WRF variables at this time index
+        # Get required variables (physics / arguments preserved, plus timeidx)
         # -------------------------------------------------------------------------
-        u = wrf.getvar(ncfile, "ua", timeidx=time_index)  # m/s
-        v = wrf.getvar(ncfile, "va", timeidx=time_index)  # m/s
-        p = wrf.getvar(ncfile, "pressure", timeidx=time_index)  # hPa
-        t = wrf.getvar(ncfile, "temp", timeidx=time_index)  # K
-        z = wrf.getvar(ncfile, "z", timeidx=time_index, units="m")  # m
+        pressure = wrf.getvar(ncfile, "pressure", timeidx=time_index)  # hPa
+        temperature = wrf.getvar(ncfile, "temp", timeidx=time_index, units="K")  # K
+        dewpoint = wrf.getvar(ncfile, "td", timeidx=time_index, units="K")  # K
+        geopotential_height = wrf.getvar(ncfile, "geopt", timeidx=time_index)  # m2 s-2
+        psfc_pa = wrf.getvar(ncfile, "PSFC", timeidx=time_index)  # Pa
+        psfc = psfc_pa / 100.0  # hPa
+        try:
+            psfc.attrs["units"] = "hPa"
+        except Exception:
+            pass
 
-        # -------------------------------------------------------------------------
-        # Vertical interpolation to 925 hPa
-        # -------------------------------------------------------------------------
-        level_925 = 925
-
-        t_925 = wrf.vinterp(
+        # 500-hPa environmental fields (vertical interpolation physics unchanged)
+        Z500 = wrf.vinterp(
             ncfile,
-            t,
+            geopotential_height,
             "pressure",
-            [level_925],
+            [500],
+            field_type="ght",
             extrapolate=True,
             squeeze=True,
             meta=True,
-        ).squeeze()
-        u_925 = wrf.vinterp(
+        ).squeeze()  # m2 s-2
+
+        T500 = wrf.vinterp(
             ncfile,
-            u,
+            temperature,
             "pressure",
-            [level_925],
+            [500],
+            field_type="tk",
             extrapolate=True,
             squeeze=True,
             meta=True,
-        ).squeeze()
-        v_925 = wrf.vinterp(
-            ncfile,
-            v,
-            "pressure",
-            [level_925],
-            extrapolate=True,
-            squeeze=True,
-            meta=True,
-        ).squeeze()
-        z_925 = wrf.vinterp(
-            ncfile,
-            z,
-            "pressure",
-            [level_925],
-            field_type="z",
-            extrapolate=True,
-            squeeze=True,
-            meta=True,
-        ).squeeze()
+        ).squeeze()  # K
 
-        # -------------------------------------------------------------------------
-        # Convert and smooth fields
-        # -------------------------------------------------------------------------
-        # Heights in decameters, smoothed
-        z_925_dm = gaussian_filter(to_np(z_925) / 10.0, sigma=2.0)
+        # Coordinates & projection from T500
+        lats, lons = wrf.latlon_coords(T500)
+        cart_proj = wrf.get_cartopy(T500)
 
-        # Temperature in °C, smoothed
-        t_925_c = to_np(t_925) - 273.15
-        t_925_c = gaussian_filter(t_925_c, sigma=1.0)
-
-        # Winds in knots
-        u_925_knots = to_np(u_925) * 1.94384449
-        v_925_knots = to_np(v_925) * 1.94384449
-
-        # -------------------------------------------------------------------------
-        # Get lat/lon and grid spacing (works for static and moving nests)
-        # -------------------------------------------------------------------------
-        lats, lons = wrf.latlon_coords(u_925)
         (
             lats_np,
             lons_np,
             avg_dx_km,
             avg_dy_km,
             extent_adjustment,
-            label_adjustment,  # currently unused here but kept for consistency
+            label_adjustment,  # currently unused but kept for consistency
         ) = compute_grid_and_spacing(lats, lons)
+
+        # -------------------------------------------------------------------------
+        # Calculate the Lifted Index (moist-adiabatic, profile-based LI)
+        # -------------------------------------------------------------------------
+        LI_raw = lifted_index(
+            pressure=pressure,
+            temperature=temperature,
+            dewpoint=dewpoint,
+            psfc_hpa=psfc,
+            T500=T500,
+            smooth_sigma=2.0,
+            lowest_layer_dp=25.0,  # same as original (comment there said 50 mb)
+        )
+
+        # Smooth LI to clean up grid-scale noise (physics: n=9, passes=5 preserved)
+        LI_smooth = mpcalc.smooth_n_point(LI_raw, n=9, passes=5)
 
         # -------------------------------------------------------------------------
         # Dateline continuity and polar masking (v9 canonical helper)
         # -------------------------------------------------------------------------
-        (
-            lats_np,
-            lons_np,
-            z_925_dm,
-            t_925_c,
-            u_925_knots,
-            v_925_knots,
-        ) = handle_domain_continuity_and_polar_mask(
-            lats_np,
-            lons_np,
-            z_925_dm,
-            t_925_c,
-            u_925_knots,
-            v_925_knots,
+        LI_smooth_np = to_np(LI_smooth)
+        lats_np, lons_np, LI_smooth_np = handle_domain_continuity_and_polar_mask(
+            lats_np, lons_np, LI_smooth_np
         )
 
         # -------------------------------------------------------------------------
-        # Set up figure and Cartopy projection
+        # Create plot
         # -------------------------------------------------------------------------
-        cart_proj = wrf.get_cartopy(u_925)
-
         dpi = plt.rcParams.get("figure.dpi", 400)
         fig = plt.figure(figsize=(3840 / dpi, 2160 / dpi), dpi=dpi)
         ax = fig.add_subplot(1, 1, 1, projection=cart_proj)
 
-        # Map extent: slightly larger than model domain
+        # Map extent (resolution-aware padding)
         ax.set_extent(
             [
                 lons_np.min() - extent_adjustment,
@@ -517,235 +608,42 @@ def process_frame(args):
             crs=crs.PlateCarree(),
         )
 
-        # -------------------------------------------------------------------------
-        # Add land, coastlines, political boundaries, and cities
-        # -------------------------------------------------------------------------
+        # Land + features
         ax.add_feature(cfeature.LAND, facecolor=cfeature.COLORS["land"])
-
         for feature in features:
             add_feature(ax, *feature)
 
+        # Cities & gridlines
         plot_cities(ax, lons_np, lats_np, avg_dx_km, avg_dy_km)
+        add_latlon_gridlines(ax)
 
-        # Add lat/lon gridlines with labels
-        gl = add_latlon_gridlines(ax)
-
-        # -------------------------------------------------------------------------
-        # 925 hPa height contours (dm)
-        # -------------------------------------------------------------------------
-        z925_start = 60  # dm
-        z925_end = 200  # dm
-
-        if avg_dx_km >= 9 or avg_dy_km >= 9:
-            contour_interval = 4
-        else:
-            contour_interval = 2
-
-        height_levels = np.arange(z925_start, z925_end, contour_interval)
-
-        height_contours = ax.contour(
+        # LI contours (use smoothed LI field)
+        LI_levels = np.arange(-10, 4, 1)
+        LI_contour = ax.contour(
             lons_np,
             lats_np,
-            z_925_dm,
-            levels=height_levels,
+            LI_smooth_np,
+            levels=LI_levels,
             colors="black",
-            linewidths=1.0,
-            transform=crs.PlateCarree(),
-        )
-        ax.clabel(height_contours, inline=True, fontsize=10, fmt="%1.0f")
-
-        # -------------------------------------------------------------------------
-        # Temperature filled contours (°C)
-        # -------------------------------------------------------------------------
-        temp_levels = np.arange(-50, 50, 2)
-
-        color_map_rgb = (
-            np.array(
-                [
-                    [145, 0, 63],
-                    [192, 13, 80],
-                    [219, 30, 114],
-                    [228, 59, 149],
-                    [225, 102, 179],
-                    [250, 112, 216],
-                    [255, 161, 228],
-                    [255, 215, 241],
-                    [248, 248, 251],
-                    [220, 220, 236],
-                    [196, 197, 224],
-                    [173, 172, 210],
-                    [147, 142, 194],
-                    [116, 105, 176],
-                    [90, 53, 150],
-                    [44, 17, 132],
-                    [13, 20, 135],
-                    [11, 65, 159],
-                    [1, 96, 189],
-                    [26, 138, 233],
-                    [54, 175, 255],
-                    [81, 202, 255],
-                    [113, 214, 255],
-                    [157, 244, 255],
-                    [110, 231, 224],
-                    [35, 192, 182],
-                    [0, 150, 147],
-                    [14, 99, 98],
-                    [11, 99, 61],
-                    [21, 128, 58],
-                    [57, 167, 88],
-                    [109, 192, 114],
-                    [145, 209, 142],
-                    [182, 233, 170],
-                    [220, 255, 187],
-                    [254, 255, 179],
-                    [255, 241, 164],
-                    [254, 222, 138],
-                    [254, 198, 95],
-                    [253, 171, 43],
-                    [253, 146, 56],
-                    [252, 102, 49],
-                    [242, 58, 36],
-                    [219, 22, 29],
-                    [181, 2, 37],
-                    [143, 0, 38],
-                    [110, 0, 50],
-                    [77, 0, 60],
-                    [40, 0, 40],
-                ],
-                np.float32,
-            )
-            / 255.0
-        )
-
-        temp_map = plt.matplotlib.colors.ListedColormap(color_map_rgb)
-        temp_norm = plt.matplotlib.colors.BoundaryNorm(temp_levels, temp_map.N)
-
-        # 0°C isotherm as a blue contour
-        cs0 = ax.contour(
-            lons_np,
-            lats_np,
-            t_925_c,
-            levels=[0],
-            colors="blue",
             linestyles="solid",
-            linewidths=1.0,
+            linewidths=1,
             transform=crs.PlateCarree(),
         )
-        ax.clabel(cs0, inline=True, fontsize=10, fmt="%1.0f°C")
-
-        # Filled temperature contours
-        contour_filled = ax.contourf(
-            lons_np,
-            lats_np,
-            t_925_c,
-            levels=temp_levels,
-            cmap=temp_map,
-            norm=temp_norm,
-            extend="both",
-            transform=crs.PlateCarree(),
+        plt.clabel(
+            LI_contour,
+            inline=True,
+            fontsize=11,
+            fmt="%d",
+            colors="black",
+            manual=False,
+            inline_spacing=10,
         )
 
-        cbar = plt.colorbar(
-            contour_filled,
-            ax=ax,
-            orientation="vertical",
-            pad=0.05,
-            label="Temperature (°C)",
-        )
-
-        # -------------------------------------------------------------------------
-        # Wind barbs, with color chosen by background brightness
-        # -------------------------------------------------------------------------
-        ny, nx = u_925_knots.shape
-        desired_barbs = 15
-
-        barb_density_x = max(nx // desired_barbs, 1)
-        barb_density_y = max(ny // desired_barbs, 1)
-        barb_density = max(barb_density_x, barb_density_y, 1)
-
-        # Brightness of each colormap color (for contrast)
-        color_brightness = np.dot(color_map_rgb, [0.299, 0.587, 0.114])
-        brightness_threshold = 0.4
-
-        # Normalize temperature to [0, 1] for brightness lookup
-        norm_temp = plt.Normalize(vmin=temp_levels[0], vmax=temp_levels[-1])
-        temp_normalized = norm_temp(t_925_c)
-
-        brightness_map = np.interp(
-            temp_normalized,
-            np.linspace(0, 1, len(color_brightness)),
-            color_brightness,
-        )
-
-        dark_region = brightness_map <= brightness_threshold
-        light_region = brightness_map > brightness_threshold
-
-        outside_contour_mask = (
-            (t_925_c < temp_levels[0]) | (t_925_c > temp_levels[-1]) | np.isnan(t_925_c)
-        )
-        inside_contour_mask = ~outside_contour_mask
-
-        inside_light = (inside_contour_mask & light_region)[
-            ::barb_density, ::barb_density
-        ]
-        inside_dark = (inside_contour_mask & dark_region)[
-            ::barb_density, ::barb_density
-        ]
-        outside_contour = outside_contour_mask[::barb_density, ::barb_density]
-
-        lons_ds = lons_np[::barb_density, ::barb_density]
-        lats_ds = lats_np[::barb_density, ::barb_density]
-        u_ds = u_925_knots[::barb_density, ::barb_density]
-        v_ds = v_925_knots[::barb_density, ::barb_density]
-
-        # Inside temp range, light background -> black barbs
-        ax.barbs(
-            lons_ds[inside_light],
-            lats_ds[inside_light],
-            u_ds[inside_light],
-            v_ds[inside_light],
-            length=6,
-            sizes=dict(emptybarb=0.25, spacing=0.2, height=0.5),
-            linewidth=0.8,
-            color="black",
-            transform=crs.PlateCarree(),
-        )
-
-        # Inside temp range, dark background -> light gray barbs
-        ax.barbs(
-            lons_ds[inside_dark],
-            lats_ds[inside_dark],
-            u_ds[inside_dark],
-            v_ds[inside_dark],
-            length=6,
-            sizes=dict(emptybarb=0.25, spacing=0.2, height=0.5),
-            linewidth=0.8,
-            color="lightgray",
-            transform=crs.PlateCarree(),
-        )
-
-        # Outside temp shading range -> black barbs
-        ax.barbs(
-            lons_ds[outside_contour],
-            lats_ds[outside_contour],
-            u_ds[outside_contour],
-            v_ds[outside_contour],
-            length=6,
-            sizes=dict(emptybarb=0.25, spacing=0.2, height=0.5),
-            linewidth=0.8,
-            color="black",
-            transform=crs.PlateCarree(),
-        )
-
-        # -------------------------------------------------------------------------
-        # Titles and saving the figure
-        # -------------------------------------------------------------------------
+        # Titles
         plt.title(
-            f"Weather Research and Forecasting Model\n"
-            f"Average Grid Spacing: {avg_dx_km} x {avg_dy_km} km\n"
-            f"Wind Barbs at 925 hPa (knots)\n"
-            f"Temperature (°C)\n"
-            f"925 hPa Geopotential Heights (dm)",
+            "Weather Research and Forecasting Model\n"
+            f"Average Grid Spacing:{avg_dx_km}x{avg_dy_km}km\n"
+            "Surface Lifted Index (K)",
             loc="left",
             fontsize=13,
         )
@@ -755,21 +653,27 @@ def process_frame(args):
             fontsize=13,
         )
 
-        # Timestamp-based filename for sorted GIF creation
+        # Save PNG with valid_dt-based timestamp for GIF sorting
         fname_time = valid_dt.strftime("%Y%m%d%H%M%S")
-        file_out = f"wrf_{domain}_wind_925hPa_{fname_time}.png"
+        file_out = f"wrf_{domain}_Surface_Layer_LI_{fname_time}.png"
 
-        plt.savefig(
-            os.path.join(path_figures, "Images", file_out),
-            bbox_inches="tight",
-            dpi=100,
-        )
+        image_folder = os.path.join(path_figures, "Images")
+        plt.savefig(os.path.join(image_folder, file_out), bbox_inches="tight", dpi=250)
 
         plt.close(fig)
 
 
 ###############################################################################
 # Frame Discovery (v9 canonical)
+###############################################################################
+###############################################################################
+# Frame discovery: handle multi-file and multi-time setups
+#
+# Discover all (file, time_index) combinations.
+#
+# Supports:
+#     * Many wrfout_<domain>* files with one or more Time steps.
+#     * A single wrfout file with multiple Time steps.
 ###############################################################################
 def discover_frames(ncfile_paths):
     frames = []
@@ -794,13 +698,12 @@ def discover_frames(ncfile_paths):
 ###############################################################################
 if __name__ == "__main__":
     # -------------------------------------------------------------------------
-    # Parse command-line arguments
+    # CLI arguments
     # -------------------------------------------------------------------------
     if len(sys.argv) != 3:
         print(
             "\nEnter the two required arguments: path_wrf and domain\n"
-            "For example:\n"
-            "    925hPa_T_Wind_Hgt.py /home/WRF/test/em_real d01\n"
+            "For example: Surface_Layer_LI_multicore_v3.py /home/WRF/test/em_real d01\n"
         )
         sys.exit(1)
 
@@ -808,9 +711,9 @@ if __name__ == "__main__":
     domain = sys.argv[2]
 
     # -------------------------------------------------------------------------
-    # Prepare output directories
+    # Output directories (Images + Animation)
     # -------------------------------------------------------------------------
-    path_figures = "wrf_925hPa_T_Wind_Hgt"
+    path_figures = "Surface_Layer_LI"
     image_folder = os.path.join(path_figures, "Images")
     animation_folder = os.path.join(path_figures, "Animation")
 
@@ -819,16 +722,13 @@ if __name__ == "__main__":
             os.mkdir(folder)
 
     # -------------------------------------------------------------------------
-    # Find all WRF output files for this domain
+    # Discover frames (multi-file + multi-time)
     # -------------------------------------------------------------------------
     ncfile_paths = sorted(glob.glob(os.path.join(path_wrf, f"wrfout_{domain}*")))
     if not ncfile_paths:
         print(f"No wrfout files found in {path_wrf} matching wrfout_{domain}*")
         sys.exit(0)
 
-    # -------------------------------------------------------------------------
-    # Build list of frames (file, time_index) to be processed
-    # -------------------------------------------------------------------------
     frames = discover_frames(ncfile_paths)
     if not frames:
         print("No timesteps found in provided WRF files.")
@@ -840,7 +740,7 @@ if __name__ == "__main__":
     ]
 
     # -------------------------------------------------------------------------
-    # Process frames in parallel
+    # Process frames in parallel using ProcessPoolExecutor
     # -------------------------------------------------------------------------
     max_workers = min(4, len(args_list)) if args_list else 1
 
@@ -848,10 +748,10 @@ if __name__ == "__main__":
         for _ in executor.map(process_frame, args_list):
             pass
 
-    print("925 hPa plot generation complete.")
+    print("Surface-layer Lifted Index plot generation complete.")
 
     # -------------------------------------------------------------------------
-    # Build animated GIF from the sorted PNG files
+    # Create GIF animation from sorted PNG files (timestamped filenames)
     # -------------------------------------------------------------------------
     png_files = [f for f in os.listdir(image_folder) if f.endswith(".png")]
 
@@ -859,7 +759,7 @@ if __name__ == "__main__":
         print("No PNG files found for GIF generation. Skipping GIF step.")
         sys.exit(0)
 
-    # Filenames contain YYYYMMDDHHMMSS, so simple sort is chronological
+    # Filenames contain YYYYMMDDHHMMSS → simple sort is chronological
     png_files_sorted = sorted(png_files)
 
     print("Creating .gif file from sorted .png files")
@@ -872,7 +772,7 @@ if __name__ == "__main__":
         print("No images loaded for GIF creation. Skipping GIF step.")
         sys.exit(0)
 
-    gif_file_out = f"wrf_{domain}_925hPa_WIND_TEMP_Hgt.gif"
+    gif_file_out = f"wrf_{domain}_Surface_Layer_LI_animation.gif"
     gif_path = os.path.join(animation_folder, gif_file_out)
 
     images[0].save(

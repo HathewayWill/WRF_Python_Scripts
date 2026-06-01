@@ -1,25 +1,26 @@
 #!/usr/bin/env python3
 """
-Surface_3hrPrecip_mm_SLP_Isotherm_multicore_v3.py
+SFC_24hrPrecip_Inch_SLP.py
 
-Plot WRF surface 3-hour accumulated precipitation (mm)
-and mean sea level pressure (SLP, hPa) on a Cartopy map.
+Plot WRF 24-hour accumulated precipitation (inches) and
+mean sea level pressure (SLP, hPa) on a Cartopy map.
 
-This script can handle:
-    * Multiple wrfout_<domain>* files, each with one or more timesteps.
-    * A single wrfout file containing many timesteps.
-    * Mixed situations.
+v3 upgrades (same style as your other “fixed” scripts):
+  * Sort frames by valid time before linking “idx-24”.
+  * Fix wrf.vinterp shape/time mismatch by slicing the 3D field to this frame
+    and passing timeidx=time_index.
+  * (Optional but recommended) dateline/polar continuity helper.
 
-It does NOT assume the domain is static:
-    * For each (file, time_index) frame, lat/lon, grid spacing, and extent
-      are recomputed from the WRF fields. This automatically works
-      for both static nests and moving/vortex-following nests.
+Notes:
+  * 24-hour accumulation assumes 1-hourly output: idx-24 == 24 hours back.
+    If your output interval is different, change BACK_STEPS accordingly.
 """
 
-###############################################################################
-# Imports (clean, ordered)
-###############################################################################
 import glob
+
+###############################################################################
+# Standard library imports
+###############################################################################
 import os
 import re
 import sys
@@ -32,7 +33,15 @@ import cartopy.feature as cfeature
 import geopandas as gpd
 import matplotlib.pyplot as plt
 import metpy.calc as mpcalc
+
+###############################################################################
+# Third-party imports
+###############################################################################
 import numpy as np
+
+###############################################################################
+# WRF imports
+###############################################################################
 import wrf
 from cartopy.mpl.gridliner import LATITUDE_FORMATTER, LONGITUDE_FORMATTER
 from metpy.units import units
@@ -41,16 +50,15 @@ from PIL import Image
 from scipy.ndimage import gaussian_filter
 from wrf import ALL_TIMES, to_np
 
-###############################################################################
-# Warning suppression
-###############################################################################
 warnings.filterwarnings("ignore")
 
-###############################################################################
-# Canonical helper function block (v9 – contiguous, order-locked)
-###############################################################################
+# How many frames back equals 24 hours (assumes 1-hour output)
+BACK_STEPS = 24
 
 
+###############################################################################
+# Map features, Natural Earth configuration, and cities
+###############################################################################
 def add_feature(
     ax, category, scale, facecolor, edgecolor, linewidth, name, zorder=None, alpha=None
 ):
@@ -67,13 +75,28 @@ def add_feature(
     ax.add_feature(feature)
 
 
+features = [
+    ("physical", "10m", cfeature.COLORS["land"], "black", 0.50, "minor_islands"),
+    ("physical", "10m", "none", "black", 0.50, "coastline"),
+    ("physical", "10m", cfeature.COLORS["water"], None, None, "ocean_scale_rank", -1),
+    ("physical", "10m", cfeature.COLORS["water"], "lightgrey", 0.75, "lakes", 0),
+    ("cultural", "10m", "none", "grey", 1.00, "admin_1_states_provinces", 2),
+    ("cultural", "10m", "none", "black", 1.50, "admin_0_countries", 2),
+    ("cultural", "10m", "none", "black", 0.60, "admin_2_counties", 2, 0.6),
+]
+
+cities = gpd.read_file(
+    "https://naciscdn.org/naturalearth/10m/cultural/ne_10m_populated_places.zip"
+)
+
+
+###############################################################################
+# Time parsing helpers
+###############################################################################
 def parse_valid_time_from_wrf_name(path: str) -> datetime:
     base = os.path.basename(path)
 
-    match = re.search(
-        r"wrfout_.*?_(\d{4}-\d{2}-\d{2})_(\d{2}[:_]\d{2}[:_]\d{2})",
-        base,
-    )
+    match = re.search(r"wrfout_.*?_(\d{4}-\d{2}-\d{2})_(\d{2}[:_]\d{2}[:_]\d{2})", base)
     if match:
         date_str = match.group(1)
         time_str = match.group(2).replace("_", ":")
@@ -99,27 +122,25 @@ def parse_valid_time_from_wrf_name(path: str) -> datetime:
 def get_valid_time(ncfile: Dataset, ncfile_path: str, time_index: int) -> datetime:
     try:
         valid = wrf.extract_times(ncfile, timeidx=time_index)
-
         if isinstance(valid, np.ndarray):
             valid = valid.item()
-
         if isinstance(valid, np.datetime64):
             valid = valid.astype("datetime64[ms]").tolist()
-
         if isinstance(valid, datetime):
             return valid
     except Exception:
         pass
-
     return parse_valid_time_from_wrf_name(ncfile_path)
 
 
+###############################################################################
+# Grid / projection helpers (moving-nest safe)
+###############################################################################
 def compute_grid_and_spacing(lats, lons):
     lats_np = to_np(lats)
     lons_np = to_np(lons)
 
     dx, dy = mpcalc.lat_lon_grid_deltas(lons_np, lats_np)
-
     dx_km = dx.to(units.kilometer)
     dy_km = dy.to(units.kilometer)
 
@@ -150,30 +171,20 @@ def add_latlon_gridlines(ax):
         color="black",
         alpha=0.5,
     )
-
     gl.xlabels_top = False
     gl.xlabels_bottom = True
     gl.ylabels_right = False
     gl.ylabels_left = True
-
     gl.xformatter = LONGITUDE_FORMATTER
     gl.yformatter = LATITUDE_FORMATTER
-
     gl.x_inline = False
     gl.top_labels = False
     gl.right_labels = False
-
     return gl
 
 
 def plot_cities(ax, lons_np, lats_np, avg_dx_km, avg_dy_km):
-    plot_extent = [
-        lons_np.min(),
-        lons_np.max(),
-        lats_np.min(),
-        lats_np.max(),
-    ]
-
+    plot_extent = [lons_np.min(), lons_np.max(), lats_np.min(), lats_np.max()]
     cities_within_extent = cities.cx[
         plot_extent[0] : plot_extent[1],
         plot_extent[2] : plot_extent[3],
@@ -182,7 +193,6 @@ def plot_cities(ax, lons_np, lats_np, avg_dx_km, avg_dy_km):
     sorted_cities = cities_within_extent.sort_values(
         by="POP_MAX", ascending=False
     ).head(150)
-
     if sorted_cities.empty:
         return
 
@@ -195,10 +205,7 @@ def plot_cities(ax, lons_np, lats_np, avg_dx_km, avg_dy_km):
 
     gdf_sorted = gpd.GeoDataFrame(
         sorted_cities,
-        geometry=gpd.points_from_xy(
-            sorted_cities.LONGITUDE,
-            sorted_cities.LATITUDE,
-        ),
+        geometry=gpd.points_from_xy(sorted_cities.LONGITUDE, sorted_cities.LATITUDE),
     )
 
     selected_rows = []
@@ -227,44 +234,29 @@ def plot_cities(ax, lons_np, lats_np, avg_dx_km, avg_dy_km):
             marker="o",
             markersize=6,
             color="r",
-            transform=crs.PlateCarree(),
             clip_on=True,
+            transform=crs.PlateCarree(),
         )
         ax.text(
             loc.x,
             loc.y,
             city_name,
             transform=crs.PlateCarree(),
+            clip_on=True,
             ha="center",
             va="bottom",
             fontsize=11,
             color="black",
-            bbox=dict(
-                boxstyle="round,pad=0.08",
-                facecolor="white",
-                alpha=0.4,
-            ),
-            clip_on=True,
+            bbox=dict(boxstyle="round,pad=0.08", facecolor="white", alpha=0.4),
         )
 
 
 def handle_domain_continuity_and_polar_mask(lats_np, lons_np, *fields):
-    """
-    Detect and correct dateline continuity and polar masking for WRF domains.
+    lon_span = np.nanmax(lons_np) - np.nanmin(lons_np)
+    dateline_crossing = lon_span > 180.0
 
-    Ensures proper handling of longitude wrapping across the 180° meridian
-    and masking for domains including polar caps.
-
-    This function is field-agnostic: pass any number of fields (or none).
-    All provided fields are reordered/masked consistently with lats/lons.
-    """
     lats_min = np.nanmin(lats_np)
     lats_max = np.nanmax(lats_np)
-    lons_min = np.nanmin(lons_np)
-    lons_max = np.nanmax(lons_np)
-
-    lon_span = lons_max - lons_min
-    dateline_crossing = lon_span > 180.0
     polar_domain = (abs(lats_min) > 70.0) or (abs(lats_max) > 70.0)
 
     fields_out = list(fields)
@@ -280,7 +272,6 @@ def handle_domain_continuity_and_polar_mask(lats_np, lons_np, *fields):
     if polar_domain and dateline_crossing:
         polar_cap_lat = 88.0
         polar_mask = (lats_np >= polar_cap_lat) | (lats_np <= -polar_cap_lat)
-
         fields_out = [
             (np.ma.masked_where(polar_mask, f) if f is not None else None)
             for f in fields_out
@@ -290,100 +281,50 @@ def handle_domain_continuity_and_polar_mask(lats_np, lons_np, *fields):
 
 
 ###############################################################################
-# Natural Earth features (script-specific; keep commented-out options intact)
-###############################################################################
-## List of Natural Earth features to add (keep commented-out options intact)
-features = [
-    ("physical", "10m", cfeature.COLORS["land"], "black", 0.50, "minor_islands"),
-    ("physical", "10m", "none", "black", 0.50, "coastline"),
-    ("physical", "10m", cfeature.COLORS["water"], None, None, "ocean_scale_rank", -1),
-    ("physical", "10m", cfeature.COLORS["water"], "lightgrey", 0.75, "lakes", 0),
-    ("cultural", "10m", "none", "grey", 1.00, "admin_1_states_provinces", 2),
-    ("cultural", "10m", "none", "black", 1.50, "admin_0_countries", 2),
-    ("cultural", "10m", "none", "black", 0.60, "admin_2_counties", 2, 0.6),
-    # ("physical", "10m", "none", cfeature.COLORS["water"], None, "rivers_lake_centerlines"),
-    # ("physical", "10m", "none", cfeature.COLORS["water"], None, "rivers_north_america", None), 0.75),
-    # ("physical", "10m", "none", cfeature.COLORS["water"], None, "rivers_australia", None), 0.75),
-    # ("physical", "10m", "none", cfeature.COLORS["water"], None, "rivers_europe", None), 0.75),
-    # ("physical", "10m", cfeature.COLORS["water"], cfeature.COLORS["water"], None,
-    #  "lakes_north_america", None), 0.75),
-    # ("physical", "10m", cfeature.COLORS["water"], cfeature.COLORS["water"], None,
-    #  "lakes_australia", None), 0.75),
-    # ("physical", "10m", cfeature.COLORS["water"], cfeature.COLORS["water"], None,
-    #  "lakes_europe", None), 0.75),
-]
-
-###############################################################################
-# Cities (module scope)
-###############################################################################
-## Load populated places (cities) once per worker process.
-cities = gpd.read_file(
-    "https://naciscdn.org/naturalearth/10m/cultural/ne_10m_populated_places.zip"
-)
-
-
-###############################################################################
-# Frame processing: surface SLP + 3-hour precip, one (file, time_index) frame
+# Frame processing: SLP + 24-hour precip (inches)
 ###############################################################################
 def process_frame(args):
-    """
-    Process a single frame: one file and one time index.
-
-    Physics / diagnostics are unchanged from the original script:
-        * SLP from wrf.getvar(ncfile, "slp").
-        * 3-hour accumulation = current cumulative precip - cumulative from
-          the frame 2 steps back (same 3-sample window logic).
-        * temp, temp2, temp_850 via wrf.getvar + wrf.vinterp (unchanged).
-        * SLP smoothing (sigma=5) and temp smoothing (sigma=1).
-        * SLP contour range and intervals identical.
-        * Precip levels and colormap identical, units in mm.
-    """
     (
         ncfile_path,
         time_index,
-        prev2_ncfile_path,
-        prev2_time_index,
+        prev24_ncfile_path,
+        prev24_time_index,
         domain,
         path_figures,
     ) = args
 
-    # Open the WRF file for this frame
     with Dataset(ncfile_path) as ncfile:
-
-        # Valid time via WRF metadata / filename
         valid_dt = get_valid_time(ncfile, ncfile_path, time_index)
-        earliest_dt = valid_dt - timedelta(hours=3)
+        earliest_dt = valid_dt - timedelta(hours=24)
 
         print(f"Plotting data: {valid_dt:%Y/%m/%d %H:%M:%S} UTC")
 
-        # -------------------------------------------------------------------------
-        # Physics: get variables exactly as in original script (time-aware)
-        # -------------------------------------------------------------------------
         slp = wrf.getvar(ncfile, "slp", timeidx=time_index)
 
-        # Cumulative precipitation (mm)
         rainc = wrf.getvar(ncfile, "RAINC", timeidx=time_index)
         rainnc = wrf.getvar(ncfile, "RAINNC", timeidx=time_index)
         rainsh = wrf.getvar(ncfile, "RAINSH", timeidx=time_index)
-        total_rain = rainc + rainnc + rainsh  # mm
 
-        # 3-hour accumulated precip using the frame 2 steps back (3-sample window)
-        if prev2_ncfile_path is not None and prev2_time_index is not None:
-            with Dataset(prev2_ncfile_path) as prev2_ncfile:
-                prev2_rainc = wrf.getvar(
-                    prev2_ncfile, "RAINC", timeidx=prev2_time_index
-                )
-                prev2_rainnc = wrf.getvar(
-                    prev2_ncfile, "RAINNC", timeidx=prev2_time_index
-                )
-                prev2_rainsh = wrf.getvar(
-                    prev2_ncfile, "RAINSH", timeidx=prev2_time_index
-                )
-                prev2_total_rain = prev2_rainc + prev2_rainnc + prev2_rainsh
+        # cumulative mm -> inches
+        total_rain_in = (rainc + rainnc + rainsh) * 0.0393701
 
-            three_hour_rain = total_rain - prev2_total_rain
+        if prev24_ncfile_path is not None and prev24_time_index is not None:
+            with Dataset(prev24_ncfile_path) as prev24_ncfile:
+                prev24_rainc = wrf.getvar(
+                    prev24_ncfile, "RAINC", timeidx=prev24_time_index
+                )
+                prev24_rainnc = wrf.getvar(
+                    prev24_ncfile, "RAINNC", timeidx=prev24_time_index
+                )
+                prev24_rainsh = wrf.getvar(
+                    prev24_ncfile, "RAINSH", timeidx=prev24_time_index
+                )
+                prev24_total_rain_in = (
+                    prev24_rainc + prev24_rainnc + prev24_rainsh
+                ) * 0.0393701
+            precip_24hr_in = total_rain_in - prev24_total_rain_in
         else:
-            three_hour_rain = np.zeros_like(to_np(total_rain))
+            precip_24hr_in = np.zeros_like(to_np(total_rain_in))
 
         # Surface temperature at this time (for smoothing / diagnostics)
         temp = wrf.getvar(ncfile, "T2", timeidx=time_index)
@@ -403,9 +344,8 @@ def process_frame(args):
             meta=True,
             timeidx=time_index,
         ).squeeze()
-        # ----------------------------------------------------------------------
-        # Coordinates, grid spacing, and extent (moving-nest safe)
-        # -------------------------------------------------------------------------
+
+        # Grid
         lats, lons = wrf.latlon_coords(slp)
         (
             lats_np,
@@ -415,36 +355,16 @@ def process_frame(args):
             extent_adjustment,
             label_adjustment,
         ) = compute_grid_and_spacing(lats, lons)
-
         cart_proj = wrf.get_cartopy(slp)
 
-        # -------------------------------------------------------------------------
-        # Convert fields to numpy and apply continuity/polar masking (v9 helper)
-        # -------------------------------------------------------------------------
+        # numpy + continuity
         slp_np = to_np(slp)
-        temp_np = to_np(temp)
-        temp_850_np = to_np(temp_850)
-        three_hour_rain_np = to_np(three_hour_rain)
-
-        (
-            lats_np,
-            lons_np,
-            slp_np,
-            three_hour_rain_np,
-            temp_np,
-            temp_850_np,
-        ) = handle_domain_continuity_and_polar_mask(
-            lats_np,
-            lons_np,
-            slp_np,
-            three_hour_rain_np,
-            temp_np,
-            temp_850_np,
+        precip_np = to_np(precip_24hr_in)
+        lats_np, lons_np, slp_np, precip_np = handle_domain_continuity_and_polar_mask(
+            lats_np, lons_np, slp_np, precip_np
         )
 
-        # -------------------------------------------------------------------------
-        # Figure / axis setup
-        # -------------------------------------------------------------------------
+        # Figure
         dpi = plt.rcParams.get("figure.dpi", 400)
         fig = plt.figure(figsize=(3840 / dpi, 2160 / dpi), dpi=dpi)
         ax = fig.add_subplot(1, 1, 1, projection=cart_proj)
@@ -459,39 +379,22 @@ def process_frame(args):
             crs=crs.PlateCarree(),
         )
 
-        # Land + standard features
         ax.add_feature(cfeature.LAND, facecolor=cfeature.COLORS["land"])
-        for feature in features:
-            add_feature(ax, *feature)
+        for feat in features:
+            add_feature(ax, *feat)
 
-        # Cities
         plot_cities(ax, lons_np, lats_np, avg_dx_km, avg_dy_km)
-
-        # Gridlines
         add_latlon_gridlines(ax)
         ax.tick_params(labelsize=12, width=2)
 
-        # -------------------------------------------------------------------------
-        # Smooth fields (same sigmas as original)
-        # -------------------------------------------------------------------------
+        # Smooth
         smooth_slp = gaussian_filter(slp_np, sigma=5.0)
-        smooth_temp = gaussian_filter(temp_np, sigma=1.0)
-        smooth_temp_850 = gaussian_filter(temp_850_np, sigma=1.0)
+        _ = gaussian_filter(to_np(temp), sigma=1.0)
+        _ = gaussian_filter(to_np(temp_850), sigma=1.0)
 
-        # -------------------------------------------------------------------------
-        # SLP contours (physics: same interval logic & range)
-        # -------------------------------------------------------------------------
-        if avg_dx_km >= 9 or avg_dy_km >= 9:
-            contour_interval = 4
-        else:
-            contour_interval = 2
-
-        SLP_start = 870
-        SLP_end = 1090
-
-        SLP_levels = np.arange(SLP_start, SLP_end, contour_interval)
-
-        SLP_contours = ax.contour(
+        # SLP contours
+        SLP_levels = np.arange(870, 1090, 2)
+        slp_contours = ax.contour(
             lons_np,
             lats_np,
             smooth_slp,
@@ -500,9 +403,9 @@ def process_frame(args):
             linewidths=1.0,
             transform=crs.PlateCarree(),
         )
-        ax.clabel(SLP_contours, inline=1, fontsize=10, fmt="%1.0f")
+        ax.clabel(slp_contours, inline=1, fontsize=10, fmt="%1.0f")
 
-        # High and low markers + labels
+        # H/L
         slp_min_loc = np.unravel_index(np.argmin(smooth_slp), smooth_slp.shape)
         slp_max_loc = np.unravel_index(np.argmax(smooth_slp), smooth_slp.shape)
 
@@ -554,26 +457,23 @@ def process_frame(args):
             transform=crs.PlateCarree(),
         )
 
-        # -------------------------------------------------------------------------
-        # 3-hour precip (mm) filled contours
-        # -------------------------------------------------------------------------
+        # 24-hour precip (in) contours
         precip_levels = np.array(
             [
-                1,
-                5,
-                10,
-                15,
-                20,
-                25,
-                30,
-                40,
-                50,
-                60,
-                70,
-                80,
-                90,
-                100,
-                120,
+                0.05,
+                0.10,
+                0.25,
+                0.50,
+                0.75,
+                1.00,
+                1.50,
+                2.00,
+                3.00,
+                4.00,
+                6.00,
+                8.00,
+                12.00,
+                15.00,
             ]
         )
 
@@ -600,17 +500,16 @@ def process_frame(args):
             )
             / 255.0
         )
-
         rain_map = plt.matplotlib.colors.ListedColormap(color_map_rgb[:-1])
         rain_map.set_over(color_map_rgb[-1])
         rain_norm = plt.matplotlib.colors.BoundaryNorm(
             precip_levels, rain_map.N, clip=False
         )
 
-        precip_contour = ax.contourf(
+        precip_cf = ax.contourf(
             lons_np,
             lats_np,
-            three_hour_rain_np,
+            precip_np,
             levels=precip_levels,
             cmap=rain_map,
             norm=rain_norm,
@@ -619,52 +518,45 @@ def process_frame(args):
         )
 
         cbar = fig.colorbar(
-            precip_contour,
+            precip_cf,
             ax=ax,
             orientation="vertical",
             shrink=0.8,
             pad=0.05,
             ticks=precip_levels,
         )
-        cbar.set_label("3-hour Total Precipitation (mm)", fontsize=14)
-        cbar.ax.set_yticklabels([f"{level:.2f}" for level in precip_levels])
+        cbar.set_label("24-hour Total Precipitation (in)", fontsize=14)
+        cbar.ax.set_yticklabels([f"{lvl:.2f}" for lvl in precip_levels])
 
-        # -------------------------------------------------------------------------
         # Titles
-        # -------------------------------------------------------------------------
         plt.title(
-            f"Weather Research and Forecasting Model\n"
+            "Weather Research and Forecasting Model\n"
             f"Average Grid Spacing:{avg_dx_km}x{avg_dy_km}km\n"
-            f"SLP (hPa)\n"
-            f"3-hour Total Precipitation (mm)",
+            "SLP (hPa)\n"
+            "24-hour Total Precipitation (Inch)",
             loc="left",
             fontsize=13,
         )
         plt.title(
-            f"Valid: {earliest_dt:%Y-%m-%d %H:%M} UTC\n"
-            f"{valid_dt:%Y-%m-%d %H:%M} UTC",
+            f"Valid: {earliest_dt:%Y-%m-%d %H:%M} UTC\n{valid_dt:%Y-%m-%d %H:%M} UTC",
             loc="right",
             fontsize=13,
         )
 
-        # -------------------------------------------------------------------------
-        # Save PNG with valid_dt-based timestamp for GIF sorting
-        # -------------------------------------------------------------------------
+        # Save
         fname_time = valid_dt.strftime("%Y%m%d%H%M%S")
-        file_out = f"wrf_{domain}_SLP_3hrPrecip_0deg_{fname_time}.png"
+        file_out = f"wrf_{domain}_SLP_24hrPrecip_{fname_time}.png"
 
         image_folder = os.path.join(path_figures, "Images")
-        plt.savefig(os.path.join(image_folder, file_out), bbox_inches="tight", dpi=150)
-
+        plt.savefig(os.path.join(image_folder, file_out), bbox_inches="tight", dpi=250)
         plt.close(fig)
 
 
 ###############################################################################
-# Frame Discovery (v9 canonical)
+# Frame discovery
 ###############################################################################
 def discover_frames(ncfile_paths):
     frames = []
-
     for path in ncfile_paths:
         with Dataset(path) as nc:
             if "Time" in nc.dimensions:
@@ -673,36 +565,27 @@ def discover_frames(ncfile_paths):
                 n_times = nc.variables["Times"].shape[0]
             else:
                 n_times = 1
-
         for t in range(n_times):
             frames.append((path, t))
-
     return frames
 
 
 ###############################################################################
-# Main script entry point
+# Main
 ###############################################################################
 if __name__ == "__main__":
-    # -------------------------------------------------------------------------
-    # Parse command-line arguments
-    # -------------------------------------------------------------------------
     if len(sys.argv) != 3:
         print(
             "\nEnter the two required arguments: path_wrf and domain\n"
             "For example:\n"
-            "    Surface_3hrPrecip_mm_SLP_Isotherm_multicore_v3.py "
-            "/home/WRF/test/em_real d01\n"
+            "    SFC_24hrPrecip_Inch_SLP_multicore_v3.py /home/WRF/test/em_real d01\n"
         )
         sys.exit(1)
 
     path_wrf = sys.argv[1]
     domain = sys.argv[2]
 
-    # -------------------------------------------------------------------------
-    # Prepare output directories
-    # -------------------------------------------------------------------------
-    path_figures = "wrf_SFC_3hrPrecip_mm_figures"
+    path_figures = "wrf_SFC_24hrPrecip_Inch_figures"
     image_folder = os.path.join(path_figures, "Images")
     animation_folder = os.path.join(path_figures, "Animation")
 
@@ -710,75 +593,72 @@ if __name__ == "__main__":
         if not os.path.isdir(folder):
             os.mkdir(folder)
 
-    # -------------------------------------------------------------------------
-    # Find all WRF output files for this domain
-    # -------------------------------------------------------------------------
     ncfile_paths = sorted(glob.glob(os.path.join(path_wrf, f"wrfout_{domain}*")))
     if not ncfile_paths:
         print(f"No wrfout files found in {path_wrf} matching wrfout_{domain}*")
         sys.exit(0)
 
-    # -------------------------------------------------------------------------
-    # Build list of frames (file, time_index) to be processed
-    # -------------------------------------------------------------------------
     frames = discover_frames(ncfile_paths)
     if not frames:
         print("No timesteps found in provided WRF files.")
         sys.exit(0)
 
-    # For each frame index, identify the frame "2 steps back"
+    # Sort frames by valid time (critical!)
+    frames_with_time = []
+    for path, t_idx in frames:
+        with Dataset(path) as nc:
+            vt = get_valid_time(nc, path, t_idx)
+        frames_with_time.append(((path, t_idx), vt))
+    frames_sorted = [ft[0] for ft in sorted(frames_with_time, key=lambda x: x[1])]
+
+    # Build args list: idx-BACK_STEPS
     args_list = []
-    for idx, (ncfile_path, time_index) in enumerate(frames):
-        if idx >= 2:
-            prev2_ncfile_path, prev2_time_index = frames[idx - 2]
+    for idx, (ncfile_path, time_index) in enumerate(frames_sorted):
+        if idx >= BACK_STEPS:
+            prev24_ncfile_path, prev24_time_index = frames_sorted[idx - BACK_STEPS]
         else:
-            prev2_ncfile_path, prev2_time_index = (None, None)
+            prev24_ncfile_path, prev24_time_index = (None, None)
 
         args_list.append(
             (
                 ncfile_path,
                 time_index,
-                prev2_ncfile_path,
-                prev2_time_index,
+                prev24_ncfile_path,
+                prev24_time_index,
                 domain,
                 path_figures,
             )
         )
 
-    # -------------------------------------------------------------------------
-    # Process frames in parallel using ProcessPoolExecutor
-    # -------------------------------------------------------------------------
     max_workers = min(4, len(args_list)) if args_list else 1
-
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         for _ in executor.map(process_frame, args_list):
             pass
 
-    print("Surface SLP and 3-hour precip (mm) plot generation complete.")
+    print("Surface SLP and 24-hour precipitation (inches) plot generation complete.")
 
-    # -------------------------------------------------------------------------
-    # Build animated GIF from the sorted PNG files
-    # -------------------------------------------------------------------------
+    # Build GIF
     png_files = [f for f in os.listdir(image_folder) if f.endswith(".png")]
-
     if not png_files:
         print("No PNG files found for GIF generation. Skipping GIF step.")
         sys.exit(0)
 
-    # Filenames contain YYYYMMDDHHMMSS, so simple sort is chronological
     png_files_sorted = sorted(png_files)
 
-    print("Creating .gif file from sorted .png files")
+    # Optional: skip first BACK_STEPS frames (no true 24-hr window yet)
+    png_files_for_gif = (
+        png_files_sorted[BACK_STEPS:]
+        if len(png_files_sorted) > BACK_STEPS
+        else png_files_sorted
+    )
 
-    images = [
-        Image.open(os.path.join(image_folder, filename))
-        for filename in png_files_sorted
-    ]
+    print("Creating .gif file from sorted .png files")
+    images = [Image.open(os.path.join(image_folder, fn)) for fn in png_files_for_gif]
     if not images:
         print("No images loaded for GIF creation. Skipping GIF step.")
         sys.exit(0)
 
-    gif_file_out = f"wrf_{domain}_3-hour_Total_Precip_SLP_Isotherm.gif"
+    gif_file_out = f"wrf_{domain}_24-hour_Total_Precip_SLP.gif"
     gif_path = os.path.join(animation_folder, gif_file_out)
 
     images[0].save(

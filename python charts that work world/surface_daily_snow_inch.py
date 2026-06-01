@@ -2,8 +2,8 @@
 """
 SFC_DailySnow_Inch.py
 
-Daily (00–00 UTC and 12–12 UTC) accumulated snowfall (inches) based on SNOWH (m)
-difference between consecutive same-cycle times.
+Daily (00–00 UTC) accumulated snowfall (inches) based on SNOWH (m)
+difference between consecutive 00Z times.
 
 Key behaviors (physics preserved):
     * Daily accumulation between consecutive 00Z valid times:
@@ -11,18 +11,12 @@ Key behaviors (physics preserved):
         prev_total_snow = prev_SN0WH * 39.3700787402
         daily_snow_00z  = total_snow - prev_total_snow
 
-    * Daily accumulation between consecutive 12Z valid times:
-        total_snow      = SNOWH * 39.3700787402  (m -> inches)
-        prev_total_snow = prev_SN0WH * 39.3700787402
-        daily_snow_12z  = total_snow - prev_total_snow
-
     * Uses SNOWH only; SLP is loaded solely for projection/lat-lon.
 
 v3 structure:
     * Supports multiple wrfout_<domain>* files and multi-time files.
     * Discovers all (file, time_index) combinations via metadata.
-    * Selects 00Z times, pairs consecutive 00Z frames for daily totals.
-    * Selects 12Z times, pairs consecutive 12Z frames for daily totals.
+    * Selects only 00Z times, pairs consecutive 00Z frames for daily totals.
     * One PNG per daily accumulation:
         wrf_{domain}_Snow_{YYYYMMDDHHMMSS}.png
     * NetCDF4 + wrf-python only; no xarray/metpy accessors for fields.
@@ -335,18 +329,17 @@ cities = gpd.read_file(
 
 
 ###############################################################################
-# Frame processing: one daily cycle-to-cycle snowfall accumulation
-# (00Z–00Z or 12Z–12Z, depending on input pairing)
+# Frame processing: one daily 00Z–00Z snowfall accumulation
 ###############################################################################
 def process_frame(args):
     """
-    Process a single daily frame (cycle-to-cycle snowfall accumulation).
+    Process a single daily frame (00Z–00Z snowfall accumulation).
 
     args:
-        ncfile_path      : path to current cycle WRF file (00Z or 12Z)
-        time_index       : time index for current cycle in ncfile_path
-        prev_ncfile_path : path to previous same-cycle WRF file
-        prev_time_index  : time index for previous same-cycle time in prev_ncfile_path
+        ncfile_path      : path to current 00Z WRF file
+        time_index       : time index for current 00Z in ncfile_path
+        prev_ncfile_path : path to previous 00Z WRF file
+        prev_time_index  : time index for previous 00Z in prev_ncfile_path
         domain           : WRF domain string (e.g., 'd01')
         path_figures     : base path for output
     """
@@ -359,7 +352,7 @@ def process_frame(args):
         path_figures,
     ) = args
 
-    # Need a previous same-cycle frame to compute a daily accumulation
+    # Need a previous 00Z frame to compute a daily accumulation
     if prev_ncfile_path is None:
         return
 
@@ -376,20 +369,20 @@ def process_frame(args):
         latest_datetime = valid_dt
 
         # -------------------------------------------------------------------------
-        # Extract variables (current cycle) — physics preserved
+        # Extract variables (current 00Z) — physics preserved
         # -------------------------------------------------------------------------
         slp = wrf.getvar(ncfile, "slp", timeidx=time_index)
         snow = wrf.getvar(ncfile, "SNOWH", timeidx=time_index)  # m
         total_snow = snow * 39.3700787402  # m -> inches
 
         # -------------------------------------------------------------------------
-        # Extract variables (previous same-cycle time)
+        # Extract variables (previous 00Z)
         # -------------------------------------------------------------------------
         prev_snow = wrf.getvar(prev_ncfile, "SNOWH", timeidx=prev_time_index)  # m
         prev_total_snow = prev_snow * 39.3700787402  # m -> inches
 
         # -------------------------------------------------------------------------
-        # Compute daily accumulated snowfall between two same-cycle times (inches)
+        # Compute daily accumulated snowfall between two 00Z times (inches)
         # -------------------------------------------------------------------------
         daily_snow_00z = total_snow - prev_total_snow
         daily_snow_np = to_np(daily_snow_00z)
@@ -562,78 +555,6 @@ def discover_frames(ncfile_paths):
 
 
 ###############################################################################
-# Frame discovery: find all 00Z times and pair consecutive days
-###############################################################################
-def discover_00z_frames(ncfile_paths):
-    """
-    Discover all 00Z (file, time_index, valid_time) combinations and sort them.
-
-    Supports:
-        * Many wrfout_<domain>* files with one or more Time steps.
-        * A single wrfout file containing multiple Time steps.
-
-    Returns
-    -------
-    frames_00z : list of tuples
-        Each tuple is (ncfile_path, time_index, valid_dt), sorted by valid_dt.
-    """
-    frames_00z = []
-
-    for path in ncfile_paths:
-        with Dataset(path) as nc:
-            if "Time" in nc.dimensions:
-                n_times = len(nc.dimensions["Time"])
-            elif "Times" in nc.variables:
-                n_times = nc.variables["Times"].shape[0]
-            else:
-                n_times = 1
-
-            for t in range(n_times):
-                valid_dt = get_valid_time(nc, path, t)
-                if valid_dt.hour == 0:
-                    frames_00z.append((path, t, valid_dt))
-
-    frames_00z.sort(key=lambda x: x[2])
-    return frames_00z
-
-
-###############################################################################
-# Frame discovery: find all 12Z times and pair consecutive days
-###############################################################################
-def discover_12z_frames(ncfile_paths):
-    """
-    Discover all 12Z (file, time_index, valid_time) combinations and sort them.
-
-    Supports:
-        * Many wrfout_<domain>* files with one or more Time steps.
-        * A single wrfout file containing multiple Time steps.
-
-    Returns
-    -------
-    frames_12z : list of tuples
-        Each tuple is (ncfile_path, time_index, valid_dt), sorted by valid_dt.
-    """
-    frames_12z = []
-
-    for path in ncfile_paths:
-        with Dataset(path) as nc:
-            if "Time" in nc.dimensions:
-                n_times = len(nc.dimensions["Time"])
-            elif "Times" in nc.variables:
-                n_times = nc.variables["Times"].shape[0]
-            else:
-                n_times = 1
-
-            for t in range(n_times):
-                valid_dt = get_valid_time(nc, path, t)
-                if valid_dt.hour == 12:
-                    frames_12z.append((path, t, valid_dt))
-
-    frames_12z.sort(key=lambda x: x[2])
-    return frames_12z
-
-
-###############################################################################
 # Main entry point
 ###############################################################################
 if __name__ == "__main__":
@@ -652,11 +573,15 @@ if __name__ == "__main__":
     domain = sys.argv[2]
 
     # -------------------------------------------------------------------------
-    # Output directories root (per-cycle subdirectories will be created)
+    # Output directories (Images + Animation)
     # -------------------------------------------------------------------------
-    path_figures_root = "wrf_SFC_DailySnow_Inch_figures"
-    if not os.path.isdir(path_figures_root):
-        os.mkdir(path_figures_root)
+    path_figures = "wrf_SFC_DailySnow_Inch_figures"
+    image_folder = os.path.join(path_figures, "Images")
+    animation_folder = os.path.join(path_figures, "Animation")
+
+    for folder in (path_figures, image_folder, animation_folder):
+        if not os.path.isdir(folder):
+            os.mkdir(folder)
 
     # -------------------------------------------------------------------------
     # Find all WRF output files for this domain
@@ -667,104 +592,80 @@ if __name__ == "__main__":
         sys.exit(0)
 
     # -------------------------------------------------------------------------
-    # Discover frames and process both 00Z→00Z and 12Z→12Z cycles
+    # Discover all 00Z frames and pair consecutive days
     # -------------------------------------------------------------------------
-    cycles = [
-        (0, "00Z", discover_00z_frames),
-        (12, "12Z", discover_12z_frames),
-    ]
-
-    for cycle_hour, cycle_label, discover_func in cycles:
-        print(
-            f"\nProcessing {cycle_label} cycle "
-            f"({cycle_hour:02d}Z → {cycle_hour:02d}Z)",
-        )
-
-        # Per-cycle output directories (Images + Animation)
-        path_figures = os.path.join(path_figures_root, cycle_label)
-        image_folder = os.path.join(path_figures, "Images")
-        animation_folder = os.path.join(path_figures, "Animation")
-
-        for folder in (path_figures, image_folder, animation_folder):
-            if not os.path.isdir(folder):
-                os.mkdir(folder)
-
-        # Discover frames for this cycle and pair consecutive days
-        frames_cycle = discover_func(ncfile_paths)
-        if not frames_cycle:
-            print(f"No {cycle_label} timesteps found in provided WRF files.")
-            continue
-
-        args_list = []
-        for idx, (path, t_idx, valid_dt) in enumerate(frames_cycle):
-            if idx == 0:
-                prev_path = None
-                prev_t_idx = None
+    frames_00z = []
+    for path in ncfile_paths:
+        with Dataset(path) as nc:
+            if "Time" in nc.dimensions:
+                n_times = len(nc.dimensions["Time"])
+            elif "Times" in nc.variables:
+                n_times = nc.variables["Times"].shape[0]
             else:
-                prev_path, prev_t_idx, prev_valid_dt = frames_cycle[idx - 1]
-            args_list.append((path, t_idx, prev_path, prev_t_idx, domain, path_figures))
+                n_times = 1
 
-        if not args_list:
-            print(f"No frame pairs found for {cycle_label} cycle.")
-            continue
+            for t in range(n_times):
+                valid_dt = get_valid_time(nc, path, t)
+                if valid_dt.hour == 0:
+                    frames_00z.append((path, t, valid_dt))
 
-        # -------------------------------------------------------------------------
-        # Process frames in parallel (only frames with a previous cycle produce PNGs)
-        # -------------------------------------------------------------------------
-        max_workers = min(4, len(args_list)) if args_list else 1
+    frames_00z.sort(key=lambda x: x[2])
 
-        with ProcessPoolExecutor(max_workers=max_workers) as executor:
-            for _ in executor.map(process_frame, args_list):
-                pass
+    if not frames_00z:
+        print("No 00Z timesteps found in provided WRF files.")
+        sys.exit(0)
 
-        print(
-            "SFC daily snow (inches) plot generation complete "
-            f"for {cycle_label} cycle.",
-        )
+    args_list = []
+    for idx, (path, t_idx, valid_dt) in enumerate(frames_00z):
+        if idx == 0:
+            prev_path = None
+            prev_t_idx = None
+        else:
+            prev_path, prev_t_idx, prev_valid_dt = frames_00z[idx - 1]
+        args_list.append((path, t_idx, prev_path, prev_t_idx, domain, path_figures))
 
-        # -------------------------------------------------------------------------
-        # Build animated GIF from sorted PNG files (timestamped filenames)
-        # -------------------------------------------------------------------------
-        png_files = [f for f in os.listdir(image_folder) if f.endswith(".png")]
+    # -------------------------------------------------------------------------
+    # Process frames in parallel (only frames with a previous 00Z produce PNGs)
+    # -------------------------------------------------------------------------
+    max_workers = min(4, len(args_list)) if args_list else 1
 
-        if not png_files:
-            print(
-                f"No PNG files found for GIF generation for {cycle_label} cycle. "
-                "Skipping GIF step.",
-            )
-            continue
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        for _ in executor.map(process_frame, args_list):
+            pass
 
-        # Filenames contain YYYYMMDDHHMMSS → simple sort is chronological
-        png_files_sorted = sorted(png_files)
+    print("SFC daily snow (inches) plot generation complete.")
 
-        print(
-            "Creating .gif file from sorted .png files "
-            f"for {cycle_label} cycle",
-        )
+    # -------------------------------------------------------------------------
+    # Build animated GIF from sorted PNG files (timestamped filenames)
+    # -------------------------------------------------------------------------
+    png_files = [f for f in os.listdir(image_folder) if f.endswith(".png")]
 
-        images = [
-            Image.open(os.path.join(image_folder, filename))
-            for filename in png_files_sorted
-        ]
-        if not images:
-            print(
-                "No images loaded for GIF creation "
-                f"for {cycle_label} cycle. Skipping GIF step.",
-            )
-            continue
+    if not png_files:
+        print("No PNG files found for GIF generation. Skipping GIF step.")
+        sys.exit(0)
 
-        gif_file_out = (
-            f"wrf_{domain}_Daily_Total_Snow_Inch_SLP_Isotherm_{cycle_label}.gif"
-        )
-        gif_path = os.path.join(animation_folder, gif_file_out)
+    # Filenames contain YYYYMMDDHHMMSS → simple sort is chronological
+    png_files_sorted = sorted(png_files)
 
-        images[0].save(
-            gif_path,
-            save_all=True,
-            append_images=images[1:],
-            duration=800,
-            loop=0,
-        )
+    print("Creating .gif file from sorted .png files")
 
-        print(f"GIF generation complete for {cycle_label} cycle: {gif_path}")
+    images = [
+        Image.open(os.path.join(image_folder, filename))
+        for filename in png_files_sorted
+    ]
+    if not images:
+        print("No images loaded for GIF creation. Skipping GIF step.")
+        sys.exit(0)
 
+    gif_file_out = f"wrf_{domain}_Daily_Total_Snow_Inch_SLP_Isotherm.gif"
+    gif_path = os.path.join(animation_folder, gif_file_out)
+
+    images[0].save(
+        gif_path,
+        save_all=True,
+        append_images=images[1:],
+        duration=500,
+        loop=0,
+    )
+
+    print(f"GIF generation complete: {gif_path}")

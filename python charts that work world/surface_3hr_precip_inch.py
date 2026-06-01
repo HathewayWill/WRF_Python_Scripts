@@ -488,7 +488,76 @@ def process_frame(args):
         add_latlon_gridlines(ax)
         ax.tick_params(labelsize=12, width=2)
 
+        # -------------------------------------------------------------------------
+        # SLP contours
+        # -------------------------------------------------------------------------
+        contour_interval = 2
+        SLP_start = 870
+        SLP_end = 1090
+        SLP_levels = np.arange(SLP_start, SLP_end, contour_interval)
 
+        SLP_contours = ax.contour(
+            lons_np,
+            lats_np,
+            smooth_slp,
+            levels=SLP_levels,
+            colors="k",
+            linewidths=1.0,
+            transform=crs.PlateCarree(),
+        )
+        ax.clabel(SLP_contours, inline=1, fontsize=10, fmt="%1.0f")
+
+        # High/Low centers
+        slp_min_loc = np.unravel_index(np.argmin(smooth_slp), smooth_slp.shape)
+        slp_max_loc = np.unravel_index(np.argmax(smooth_slp), smooth_slp.shape)
+
+        min_pressure = smooth_slp[slp_min_loc]
+        max_pressure = smooth_slp[slp_max_loc]
+
+        min_lat, min_lon = lats_np[slp_min_loc], lons_np[slp_min_loc]
+        max_lat, max_lon = lats_np[slp_max_loc], lons_np[slp_max_loc]
+
+        ax.text(
+            min_lon,
+            min_lat,
+            "L",
+            color="red",
+            fontsize=18,
+            ha="center",
+            va="center",
+            transform=crs.PlateCarree(),
+        )
+        ax.text(
+            max_lon,
+            max_lat,
+            "H",
+            color="blue",
+            fontsize=18,
+            ha="center",
+            va="center",
+            transform=crs.PlateCarree(),
+        )
+
+        ax.text(
+            min_lon,
+            min_lat - label_adjustment,
+            f"{min_pressure:.0f}",
+            color="black",
+            fontsize=12,
+            ha="center",
+            va="center",
+            transform=crs.PlateCarree(),
+        )
+        ax.text(
+            max_lon,
+            max_lat - label_adjustment,
+            f"{max_pressure:.0f}",
+            color="black",
+            fontsize=12,
+            ha="center",
+            va="center",
+            transform=crs.PlateCarree(),
+        )
 
         # -------------------------------------------------------------------------
         # 3-hour precip filled contours (inches)
@@ -719,7 +788,7 @@ if __name__ == "__main__":
         gif_path,
         save_all=True,
         append_images=images[1:],
-        duration=800,
+        duration=500,
         loop=0,
     )
 

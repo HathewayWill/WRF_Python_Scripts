@@ -608,7 +608,7 @@ def process_frame(args):
         )
 
         plt.title(
-            f"Valid: {valid_dt:%H:%M:%SZ %Y-%m-%d}",
+            f"Valid: {valid_dt:%HZ %Y-%m-%d}",
             loc="right",
             fontsize=13,
         )
@@ -616,7 +616,7 @@ def process_frame(args):
         fname = f"wrf_{domain}_850hPa_FRONTO_{valid_dt:%Y%m%d%H%M%S}.png"
         plt.savefig(
             os.path.join(path_figures, "Images", fname),
-            dpi=150,
+            dpi=100,
             bbox_inches="tight",
         )
 
@@ -689,7 +689,7 @@ if __name__ == "__main__":
         gif_path,
         save_all=True,
         append_images=images[1:],
-        duration=800,
+        duration=500,
         loop=0,
     )
 

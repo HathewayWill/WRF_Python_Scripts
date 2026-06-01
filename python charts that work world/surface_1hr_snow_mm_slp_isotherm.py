@@ -557,25 +557,25 @@ def process_frame(args):
     Snow_levels = np.array([5, 10, 20, 30, 40, 50, 75, 100, 125, 150, 175, 200])
 
     color_map_rgb = (
-            np.array(
-                [
-                    (189, 215, 231),
-                    (107, 174, 214),
-                    (49, 130, 189),
-                    (8, 81, 156),
-                    (8, 38, 148),
-                    (255, 255, 150),
-                    (255, 196, 0),
-                    (255, 135, 0),
-                    (219, 20, 0),
-                    (158, 0, 0),
-                    (105, 0, 0),
-                    (54, 0, 0),
-                ],
-                np.float32,
-            )
-            / 255.0
+        np.array(
+            [
+                (189, 215, 231),
+                (107, 174, 214),
+                (49, 130, 189),
+                (8, 81, 156),
+                (8, 38, 148),
+                (255, 255, 150),
+                (255, 196, 0),
+                (255, 135, 0),
+                (219, 20, 0),
+                (158, 0, 0),
+                (105, 0, 0),
+                (54, 0, 0),
+            ],
+            np.float32,
         )
+        / 255.0
+    )
     snow_map = plt.matplotlib.colors.ListedColormap(color_map_rgb[:-1])
     snow_map.set_over(color_map_rgb[-1])
     snow_norm = plt.matplotlib.colors.BoundaryNorm(Snow_levels, snow_map.N)
@@ -629,7 +629,7 @@ def process_frame(args):
     plt.savefig(
         os.path.join(image_folder, file_out),
         bbox_inches="tight",
-        dpi=150,
+        dpi=100,
     )
 
     plt.close(fig)
@@ -771,7 +771,7 @@ if __name__ == "__main__":
         gif_path,
         save_all=True,
         append_images=images[1:],
-        duration=800,
+        duration=500,
         loop=0,
     )
 

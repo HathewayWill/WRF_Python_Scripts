@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Surface_3hrSnow_mm_SLP_Isotherm.py
+Surface_3hrsnow_mm_SLP_Isotherm.py
 
-Plot WRF 3-hour accumulated snow (mm) using SNOWH,
+Plot WRF 3-hour accumulated snow (millimeters) using SNOWH,
 and mean sea level pressure (SLP, hPa) on a Cartopy map.
 
 v3 pattern:
@@ -12,14 +12,12 @@ v3 pattern:
     * Uses only netCDF4 + wrf-python for field access (no xarray).
 
 Notes:
-    * Fixes wrf.vinterp shape/time mismatch in multiprocessing by ensuring the
-      'field' passed to vinterp matches the timeidx used for pressure.
-    * Sorts frames by valid time so “idx-2” is always “two frames earlier”.
+    * Avoids unused 850-hPa temperature interpolation, which can fail when wrf-python receives a squeezed/non-3D field.
     * Includes a dateline/polar continuity helper (safe for worldwide/polar domains).
 """
 
 ###############################################################################
-# Imports
+# Imports (clean, ordered)
 ###############################################################################
 import glob
 import os
@@ -43,40 +41,16 @@ from PIL import Image
 from scipy.ndimage import gaussian_filter
 from wrf import ALL_TIMES, to_np
 
+###############################################################################
+# Warning suppression
+###############################################################################
 warnings.filterwarnings("ignore")
 
 ###############################################################################
-# Natural Earth features (keep commented-out options intact)
+# Canonical helper function block (v9 – contiguous, order-locked)
 ###############################################################################
-features = [
-    ("physical", "10m", cfeature.COLORS["land"], "black", 0.50, "minor_islands"),
-    ("physical", "10m", "none", "black", 0.50, "coastline"),
-    ("physical", "10m", cfeature.COLORS["water"], None, None, "ocean_scale_rank", -1),
-    ("physical", "10m", cfeature.COLORS["water"], "lightgrey", 0.75, "lakes", 0),
-    ("cultural", "10m", "none", "grey", 1.00, "admin_1_states_provinces", 2),
-    ("cultural", "10m", "none", "black", 1.50, "admin_0_countries", 2),
-    ("cultural", "10m", "none", "black", 0.60, "admin_2_counties", 2, 0.6),
-    # ("physical", "10m", "none", cfeature.COLORS["water"], None, "rivers_lake_centerlines"),
-    # ("physical", "10m", "none", cfeature.COLORS["water"], None, "rivers_north_america", None), 0.75),
-    # ("physical", "10m", "none", cfeature.COLORS["water"], None, "rivers_australia", None), 0.75),
-    # ("physical", "10m", "none", cfeature.COLORS["water"], None, "rivers_europe", None), 0.75),
-    # ("physical", "10m", cfeature.COLORS["water"], cfeature.COLORS["water"], None,
-    #  "lakes_north_america", None), 0.75),
-    # ("physical", "10m", cfeature.COLORS["water"], cfeature.COLORS["water"], None, "lakes_australia", None), 0.75),
-    # ("physical", "10m", cfeature.COLORS["water"], cfeature.COLORS["water"], None, "lakes_europe", None), 0.75),
-]
-
-###############################################################################
-# Cities (loaded once per worker process)
-###############################################################################
-cities = gpd.read_file(
-    "https://naciscdn.org/naturalearth/10m/cultural/ne_10m_populated_places.zip"
-)
 
 
-###############################################################################
-# Helpers
-###############################################################################
 def add_feature(
     ax, category, scale, facecolor, edgecolor, linewidth, name, zorder=None, alpha=None
 ):
@@ -125,10 +99,13 @@ def parse_valid_time_from_wrf_name(path: str) -> datetime:
 def get_valid_time(ncfile: Dataset, ncfile_path: str, time_index: int) -> datetime:
     try:
         valid = wrf.extract_times(ncfile, timeidx=time_index)
+
         if isinstance(valid, np.ndarray):
             valid = valid.item()
+
         if isinstance(valid, np.datetime64):
             valid = valid.astype("datetime64[ms]").tolist()
+
         if isinstance(valid, datetime):
             return valid
     except Exception:
@@ -142,6 +119,7 @@ def compute_grid_and_spacing(lats, lons):
     lons_np = to_np(lons)
 
     dx, dy = mpcalc.lat_lon_grid_deltas(lons_np, lats_np)
+
     dx_km = dx.to(units.kilometer)
     dy_km = dy.to(units.kilometer)
 
@@ -172,28 +150,39 @@ def add_latlon_gridlines(ax):
         color="black",
         alpha=0.5,
     )
+
     gl.xlabels_top = False
     gl.xlabels_bottom = True
     gl.ylabels_right = False
     gl.ylabels_left = True
+
     gl.xformatter = LONGITUDE_FORMATTER
     gl.yformatter = LATITUDE_FORMATTER
+
     gl.x_inline = False
     gl.top_labels = False
     gl.right_labels = False
+
     return gl
 
 
 def plot_cities(ax, lons_np, lats_np, avg_dx_km, avg_dy_km):
-    plot_extent = [lons_np.min(), lons_np.max(), lats_np.min(), lats_np.max()]
+    plot_extent = [
+        lons_np.min(),
+        lons_np.max(),
+        lats_np.min(),
+        lats_np.max(),
+    ]
 
     cities_within_extent = cities.cx[
         plot_extent[0] : plot_extent[1],
         plot_extent[2] : plot_extent[3],
     ]
+
     sorted_cities = cities_within_extent.sort_values(
         by="POP_MAX", ascending=False
     ).head(150)
+
     if sorted_cities.empty:
         return
 
@@ -206,7 +195,10 @@ def plot_cities(ax, lons_np, lats_np, avg_dx_km, avg_dy_km):
 
     gdf_sorted = gpd.GeoDataFrame(
         sorted_cities,
-        geometry=gpd.points_from_xy(sorted_cities.LONGITUDE, sorted_cities.LATITUDE),
+        geometry=gpd.points_from_xy(
+            sorted_cities.LONGITUDE,
+            sorted_cities.LATITUDE,
+        ),
     )
 
     selected_rows = []
@@ -247,12 +239,24 @@ def plot_cities(ax, lons_np, lats_np, avg_dx_km, avg_dy_km):
             va="bottom",
             fontsize=11,
             color="black",
-            bbox=dict(boxstyle="round,pad=0.08", facecolor="white", alpha=0.4),
+            bbox=dict(
+                boxstyle="round,pad=0.08",
+                facecolor="white",
+                alpha=0.4,
+            ),
             clip_on=True,
         )
 
 
 def handle_domain_continuity_and_polar_mask(lats_np, lons_np, *fields):
+    """
+    Detect and correct dateline continuity and polar masking for WRF domains.
+
+    Ensures proper handling of longitude wrapping across the 180° meridian
+    and optional masking for polar caps.
+
+    Pass any number of fields; all are reordered/masked consistently.
+    """
     lats_min = np.nanmin(lats_np)
     lats_max = np.nanmax(lats_np)
     lons_min = np.nanmin(lons_np)
@@ -284,15 +288,47 @@ def handle_domain_continuity_and_polar_mask(lats_np, lons_np, *fields):
 
 
 ###############################################################################
+# Natural Earth features (keep commented-out options intact)
+###############################################################################
+features = [
+    ("physical", "10m", cfeature.COLORS["land"], "black", 0.50, "minor_islands"),
+    ("physical", "10m", "none", "black", 0.50, "coastline"),
+    ("physical", "10m", cfeature.COLORS["water"], None, None, "ocean_scale_rank", -1),
+    ("physical", "10m", cfeature.COLORS["water"], "lightgrey", 0.75, "lakes", 0),
+    ("cultural", "10m", "none", "grey", 1.00, "admin_1_states_provinces", 2),
+    ("cultural", "10m", "none", "black", 1.50, "admin_0_countries", 2),
+    ("cultural", "10m", "none", "black", 0.60, "admin_2_counties", 2, 0.6),
+    # ("physical", "10m", "none", cfeature.COLORS["water"], None, "rivers_lake_centerlines"),
+    # ("physical", "10m", "none", cfeature.COLORS["water"], None, "rivers_north_america", None), 0.75),
+    # ("physical", "10m", "none", cfeature.COLORS["water"], None, "rivers_australia", None), 0.75),
+    # ("physical", "10m", "none", cfeature.COLORS["water"], None, "rivers_europe", None), 0.75),
+    # ("physical", "10m", cfeature.COLORS["water"], cfeature.COLORS["water"], None,
+    #  "lakes_north_america", None), 0.75),
+    # ("physical", "10m", cfeature.COLORS["water"], cfeature.COLORS["water"], None,
+    #  "lakes_australia", None), 0.75),
+    # ("physical", "10m", cfeature.COLORS["water"], cfeature.COLORS["water"], None,
+    #  "lakes_europe", None), 0.75),
+]
+
+###############################################################################
+# Cities (module scope)
+###############################################################################
+cities = gpd.read_file(
+    "https://naciscdn.org/naturalearth/10m/cultural/ne_10m_populated_places.zip"
+)
+
+
+###############################################################################
 # Frame processing
 ###############################################################################
 def process_frame(args):
     """
-    Physics (as requested):
-        * SNOWH (m) -> mm (x1000)
-        * 3-hour accumulation = current - frame(idx-2)
-        * SLP contours 870–1090 hPa
-        * 850-hPa temperature via wrf.vinterp (time-consistent to avoid mismatch)
+    Process a single frame: one file and one time index.
+
+    Physics:
+        * SLP: wrf.getvar(..., "slp", timeidx=time_index)
+        * Snow depth: wrf.getvar(..., "SNOWH", timeidx=time_index) (m) -> millimeters
+        * 3-hour snow: current millimeters - millimeters from frame 2 steps back
     """
     (
         ncfile_path,
@@ -309,6 +345,7 @@ def process_frame(args):
 
         print(f"Plotting data: {valid_dt:%Y/%m/%d %H:%M:%S} UTC")
 
+        # --- Core fields (time-aware) ---
         slp = wrf.getvar(ncfile, "slp", timeidx=time_index)
 
         snowh_m = wrf.getvar(ncfile, "SNOWH", timeidx=time_index)
@@ -324,7 +361,7 @@ def process_frame(args):
         else:
             three_hour_snow_mm = np.zeros_like(to_np(total_snow_mm))
 
-
+        # --- Geometry per frame ---
         lats, lons = wrf.latlon_coords(slp)
         (
             lats_np,
@@ -337,22 +374,22 @@ def process_frame(args):
 
         cart_proj = wrf.get_cartopy(slp)
 
-        # Numpy conversions + continuity handling
+        # --- Numpy conversions + dateline/polar continuity ---
         slp_np = to_np(slp)
-        snow_np = to_np(three_hour_snow_mm)
-
+        three_hour_snow_np = to_np(three_hour_snow_mm)
         (
             lats_np,
             lons_np,
             slp_np,
-            snow_np,
+            three_hour_snow_np,
         ) = handle_domain_continuity_and_polar_mask(
             lats_np,
             lons_np,
             slp_np,
-            snow_np,
+            three_hour_snow_np,
         )
 
+        # --- Figure / map ---
         dpi = plt.rcParams.get("figure.dpi", 400)
         fig = plt.figure(figsize=(3840 / dpi, 2160 / dpi), dpi=dpi)
         ax = fig.add_subplot(1, 1, 1, projection=cart_proj)
@@ -375,14 +412,77 @@ def process_frame(args):
         add_latlon_gridlines(ax)
         ax.tick_params(labelsize=12, width=2)
 
-        # Smooth fields (same sigmas)
+        # --- Smoothing (same sigmas) ---
         smooth_slp = gaussian_filter(slp_np, sigma=5.0)
 
+        # --- SLP contours ---
+        SLP_levels = np.arange(870, 1090, 2)
+        slp_contours = ax.contour(
+            lons_np,
+            lats_np,
+            smooth_slp,
+            levels=SLP_levels,
+            colors="k",
+            linewidths=1.0,
+            transform=crs.PlateCarree(),
+        )
+        ax.clabel(slp_contours, inline=1, fontsize=10, fmt="%1.0f")
 
+        slp_min_loc = np.unravel_index(np.argmin(smooth_slp), smooth_slp.shape)
+        slp_max_loc = np.unravel_index(np.argmax(smooth_slp), smooth_slp.shape)
 
+        min_pressure = smooth_slp[slp_min_loc]
+        max_pressure = smooth_slp[slp_max_loc]
 
-        # 3-hour snow (mm) filled contours
-        Snow_levels = np.array([5, 10, 25, 50, 75, 100, 150, 200, 250, 300, 350, 400])
+        min_lat, min_lon = lats_np[slp_min_loc], lons_np[slp_min_loc]
+        max_lat, max_lon = lats_np[slp_max_loc], lons_np[slp_max_loc]
+
+        ax.text(
+            min_lon,
+            min_lat,
+            "L",
+            color="red",
+            fontsize=18,
+            ha="center",
+            va="center",
+            transform=crs.PlateCarree(),
+        )
+        ax.text(
+            max_lon,
+            max_lat,
+            "H",
+            color="blue",
+            fontsize=18,
+            ha="center",
+            va="center",
+            transform=crs.PlateCarree(),
+        )
+
+        ax.text(
+            min_lon,
+            min_lat - label_adjustment,
+            f"{min_pressure:.0f}",
+            color="black",
+            fontsize=12,
+            ha="center",
+            va="center",
+            transform=crs.PlateCarree(),
+        )
+        ax.text(
+            max_lon,
+            max_lat - label_adjustment,
+            f"{max_pressure:.0f}",
+            color="black",
+            fontsize=12,
+            ha="center",
+            va="center",
+            transform=crs.PlateCarree(),
+        )
+
+        # Snow levels in millimeters
+        Snow_levels = np.array(
+            [5, 10, 25, 50, 75, 100, 125, 150, 200, 250, 300, 375]
+        )
 
         color_map_rgb = (
             np.array(
@@ -411,7 +511,7 @@ def process_frame(args):
         snow_cf = ax.contourf(
             lons_np,
             lats_np,
-            snow_np,
+            three_hour_snow_np,
             levels=Snow_levels,
             cmap=snow_map,
             norm=snow_norm,
@@ -428,8 +528,9 @@ def process_frame(args):
             ticks=Snow_levels,
         )
         cbar.set_label("3-hour Total Snow (mm)", fontsize=14)
-        cbar.ax.set_yticklabels([f"{level:.0f}" for level in Snow_levels])
+        cbar.ax.set_yticklabels([f"{level:.2f}" for level in Snow_levels])
 
+        # --- Titles ---
         plt.title(
             "Weather Research and Forecasting Model\n"
             f"Average Grid Spacing:{avg_dx_km}x{avg_dy_km}km\n"
@@ -445,11 +546,12 @@ def process_frame(args):
             fontsize=13,
         )
 
+        # --- Save ---
         fname_time = valid_dt.strftime("%Y%m%d%H%M%S")
-        file_out = f"wrf_{domain}_SLP_3hrSnow_mm_{fname_time}.png"
+        file_out = f"wrf_{domain}_SLP_3hrsnow_mm_{fname_time}.png"
 
         image_folder = os.path.join(path_figures, "Images")
-        plt.savefig(os.path.join(image_folder, file_out), bbox_inches="tight", dpi=150)
+        plt.savefig(os.path.join(image_folder, file_out), bbox_inches="tight", dpi=250)
         plt.close(fig)
 
 
@@ -458,6 +560,7 @@ def process_frame(args):
 ###############################################################################
 def discover_frames(ncfile_paths):
     frames = []
+
     for path in ncfile_paths:
         with Dataset(path) as nc:
             if "Time" in nc.dimensions:
@@ -466,8 +569,10 @@ def discover_frames(ncfile_paths):
                 n_times = nc.variables["Times"].shape[0]
             else:
                 n_times = 1
+
         for t in range(n_times):
             frames.append((path, t))
+
     return frames
 
 
@@ -479,14 +584,14 @@ if __name__ == "__main__":
         print(
             "\nEnter the two required arguments: path_wrf and domain\n"
             "For example:\n"
-            "    Surface_3hrSnow_mm_SLP_Isotherm_multicore_v3.py /home/WRF/test/em_real d01\n"
+            "    Surface_3hrsnow_mm_SLP_Isotherm_multicore_v3.py /home/WRF/test/em_real d01\n"
         )
         sys.exit(1)
 
     path_wrf = sys.argv[1]
     domain = sys.argv[2]
 
-    path_figures = "wrf_SFC_3hrSNOW_mm_figures"
+    path_figures = "wrf_SFC_3hrsnow_mm_figures"
     image_folder = os.path.join(path_figures, "Images")
     animation_folder = os.path.join(path_figures, "Animation")
 
@@ -499,12 +604,13 @@ if __name__ == "__main__":
         print(f"No wrfout files found in {path_wrf} matching wrfout_{domain}*")
         sys.exit(0)
 
+    # Discover all (file, time_index) pairs
     frames = discover_frames(ncfile_paths)
     if not frames:
         print("No timesteps found in provided WRF files.")
         sys.exit(0)
 
-    # Sort frames by valid time (important when using multiple files / mixed layouts)
+    # Sort frames by valid time so “idx-2” always means “two frames earlier in time”
     frames_with_time = []
     for path, t_idx in frames:
         with Dataset(path) as nc:
@@ -512,6 +618,7 @@ if __name__ == "__main__":
         frames_with_time.append(((path, t_idx), vt))
     frames_sorted = [ft[0] for ft in sorted(frames_with_time, key=lambda x: x[1])]
 
+    # Build args_list with “2 steps back” link (kept as requested)
     args_list = []
     for idx, (ncfile_path, time_index) in enumerate(frames_sorted):
         if idx >= 2:
@@ -551,14 +658,14 @@ if __name__ == "__main__":
         print("No images loaded for GIF creation. Skipping GIF step.")
         sys.exit(0)
 
-    gif_file_out = f"wrf_{domain}_3-hour_Total_Snow_mm_SLP_Isotherm.gif"
+    gif_file_out = f"wrf_{domain}_3-hour_Total_snow_mm_SLP_Isotherm.gif"
     gif_path = os.path.join(animation_folder, gif_file_out)
 
     images[0].save(
         gif_path,
         save_all=True,
         append_images=images[1:],
-        duration=800,
+        duration=500,
         loop=0,
     )
 

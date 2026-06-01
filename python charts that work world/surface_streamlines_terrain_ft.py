@@ -436,8 +436,25 @@ def process_frame(args):
         cmap_custom = mcolors.ListedColormap(colors_terrain)
 
         # Terrain levels based on elevation range (ft)
-        ter_min = np.min(ter_np)
-        ter_max = np.max(ter_np)
+        ter_np = np.ma.masked_invalid(ter_np)
+        valid_ter = ter_np.compressed()
+
+        if valid_ter.size == 0:
+            print(
+                f"Skipping frame {valid_dt:%Y/%m/%d %H:%M:%S} UTC: "
+                "no valid terrain values"
+            )
+            plt.close(fig)
+            return
+
+        ter_min = float(valid_ter.min())
+        ter_max = float(valid_ter.max())
+
+        # contourf requires strictly increasing levels
+        if np.isclose(ter_min, ter_max):
+            ter_min -= 1.0
+            ter_max += 1.0
+
         elevation_difference = ter_max - ter_min
 
         if elevation_difference <= 1600:
@@ -456,6 +473,15 @@ def process_frame(args):
             max_contour_levels = 200
 
         ter_levels = np.linspace(ter_min, ter_max, max_contour_levels)
+        ter_levels = np.unique(ter_levels)
+
+        if ter_levels.size < 2:
+            print(
+                f"Skipping frame {valid_dt:%Y/%m/%d %H:%M:%S} UTC: "
+                "invalid terrain contour levels"
+            )
+            plt.close(fig)
+            return
 
         # Terrain filled contours
         ter_contours = ax.contourf(
@@ -500,7 +526,7 @@ def process_frame(args):
             fontsize=13,
         )
         plt.title(
-            f"Valid: {valid_dt:%H:%M:%SZ %Y-%m-%d}",
+            f"Valid: {valid_dt:%HZ %Y-%m-%d}",
             loc="right",
             fontsize=13,
         )
@@ -627,7 +653,7 @@ if __name__ == "__main__":
         gif_path,
         save_all=True,
         append_images=images[1:],
-        duration=800,
+        duration=500,
         loop=0,
     )
 

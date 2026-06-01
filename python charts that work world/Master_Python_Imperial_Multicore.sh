@@ -60,6 +60,29 @@ run_scripts_in_parallel() {
 # Point-based scripts for each station
 ###############################################################################
 
+run_wbgt_timeseries() {
+  local domain="$1"
+
+  for location in "${!locations[@]}"; do
+    local lat_long="${locations[$location]}"
+    local lat long
+    lat=$(echo "$lat_long" | cut -d',' -f1)
+    long=$(echo "$lat_long" | cut -d',' -f2)
+
+    mkdir -p "$parent_folder/$domain/$location" || { echo "Failed to create directory $parent_folder/$domain/$location"; exit 1; }
+    cd "$parent_folder/$domain/$location" || { echo "Failed to cd into $parent_folder/$domain/$location"; exit 1; }
+
+    echo "Running wbgt_solar_timeseries_degf.py for $location in $domain (lat=$lat lon=$long)"
+    python3 "$script_dir/wbgt_solar_timeseries_degf.py" \
+      "$run_location" "$domain" "$location" "$lat" "$long" 2>&1 || {
+        echo "wbgt_solar_timeseries_degf.py failed for $location in $domain"
+        exit 1
+      }
+
+    cd "$script_dir" || { echo "Failed to cd back to $script_dir"; exit 1; }
+  done
+}
+
 run_vertical_wind() {
   local domain="$1"
 
@@ -190,6 +213,10 @@ mkdir -p "$parent_folder"
 
 find_wrf_run_directories
 
+# Point charts for domain d02
+echo "Running point-based Python charts for domain d02."
+run_wbgt_timeseries "d02"
+sleep 5
 run_meteogram "d02"
 sleep 5
 run_skew_t "d02"
@@ -219,7 +246,6 @@ d01_scripts=(
   "cloud_top_temperature.py"
   "precipitable_water_inch.py"
   "cloud_top_temperature_rainbow.py"
-  "Road_Icing_Index_multicore_Publication_version.py"
 )
 
 run_scripts_in_parallel "d01" "${d01_scripts[@]}"
@@ -235,11 +261,13 @@ d02_scripts=(
   "cloud_top_temperature.py"
   "precipitable_water_inch.py"
 
-  "Road_Icing_Index_multicore_Publication_version.py"
-
   "surface_1hr_precip_inch_slp_isotherm.py"
   "surface_1hr_snow_inch_slp_isotherm.py"
   "surface_1hr_water_equivalent_snow_inch_slp_isotherm.py"
+
+  "surface_24hr_precip_inch.py"
+  "surface_24hr_snow_inch.py"
+  "surface_24hr_water_equivalent_snow_inch.py"
 
   "surface_3hr_precip_inch.py"
   "surface_3hr_snow_inch.py"
@@ -268,8 +296,7 @@ d02_scripts=(
 
   "surface_windchill_degf_slp_wind_speed_dir.py"
   "surface_visibility_miles.py"
-  #"mixed_layer_lifted_index.py"
-  #"surface_based_lifted_index.py"
+
 )
 run_scripts_in_parallel "d02" "${d02_scripts[@]}"
 

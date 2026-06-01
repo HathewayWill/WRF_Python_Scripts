@@ -837,7 +837,7 @@ def process_frame(args):
         plt.savefig(
             os.path.join(image_folder, file_out),
             bbox_inches="tight",
-            dpi=150,
+            dpi=100,
         )
 
         plt.close(fig)
@@ -899,7 +899,7 @@ def create_gif(path_figures, image_folder, domain):
         gif_path,
         save_all=True,
         append_images=images[1:],
-        duration=800,
+        duration=500,
         loop=0,
     )
 

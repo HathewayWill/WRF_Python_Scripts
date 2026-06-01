@@ -301,7 +301,7 @@ features = [
     ("physical", "10m", cfeature.COLORS["land"], "black", 0.50, "minor_islands"),
     ("physical", "10m", "none", "black", 0.50, "coastline"),
     ("physical", "10m", cfeature.COLORS["water"], None, None, "ocean_scale_rank", 2),
-    ("physical", "10m", cfeature.COLORS["water"], "lightgrey", 0.75, "lakes", 2),
+    ("physical", "10m", cfeature.COLORS["water"], "lightgrey", 0.75, "lakes", 0),
     ("cultural", "10m", "none", "grey", 1.00, "admin_1_states_provinces", 2),
     ("cultural", "10m", "none", "black", 1.50, "admin_0_countries", 2),
     ("cultural", "10m", "none", "black", 0.60, "admin_2_counties", 2, 0.6),
@@ -518,8 +518,25 @@ def process_frame(args):
 
         rgb_values = cmap_custom(np.linspace(0, 1, cmap_custom.N))[:, :3]
 
-        ter_min = np.min(ter_np)
-        ter_max = np.max(ter_np)
+        ter_np = np.ma.masked_invalid(ter_np)
+        valid_ter = ter_np.compressed()
+
+        if valid_ter.size == 0:
+            print(
+                f"Skipping frame {valid_dt:%Y/%m/%d %H:%M:%S} UTC: "
+                "no valid terrain values"
+            )
+            plt.close(fig)
+            return
+
+        ter_min = float(valid_ter.min())
+        ter_max = float(valid_ter.max())
+
+        # contourf requires strictly increasing levels
+        if np.isclose(ter_min, ter_max):
+            ter_min -= 1.0
+            ter_max += 1.0
+
         elevation_difference = ter_max - ter_min
 
         if elevation_difference <= 500:
@@ -538,6 +555,15 @@ def process_frame(args):
             max_contour_levels = 200
 
         ter_levels = np.linspace(ter_min, ter_max, max_contour_levels)
+        ter_levels = np.unique(ter_levels)
+
+        if ter_levels.size < 2:
+            print(
+                f"Skipping frame {valid_dt:%Y/%m/%d %H:%M:%S} UTC: "
+                "invalid terrain contour levels"
+            )
+            plt.close(fig)
+            return
 
         ter_contours = ax.contourf(
             lons_np,
@@ -654,7 +680,7 @@ def process_frame(args):
             fontsize=13,
         )
         plt.title(
-            f"Valid: {valid_dt:%H:%M:%SZ %Y-%m-%d}",
+            f"Valid: {valid_dt:%HZ %Y-%m-%d}",
             loc="right",
             fontsize=13,
         )
@@ -670,7 +696,7 @@ def process_frame(args):
         plt.savefig(
             os.path.join(image_folder, file_out),
             bbox_inches="tight",
-            dpi=150,
+            dpi=100,
         )
 
         plt.close(fig)
@@ -781,7 +807,7 @@ if __name__ == "__main__":
         gif_path,
         save_all=True,
         append_images=images[1:],
-        duration=800,
+        duration=500,
         loop=0,
     )
 

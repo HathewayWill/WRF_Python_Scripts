@@ -95,11 +95,7 @@ conda activate wrf-python || { echo "Failed to activate conda environment."; exi
 # Define locations
 ###############################################################################
 declare -A locations=(
-  ["Los Angeles, CA"]="34.0522,-118.2437"          # Largest city in California
-  ["San Diego, CA"]="32.7157,-117.1611"            # Second largest, coastal southern California
-  ["San Jose, CA"]="37.3382,-121.8863"             # Largest city in Silicon Valley
 )
-
 
 ###############################################################################
 # Helper function: run a list of gridded scripts in parallel for one domain
@@ -280,13 +276,13 @@ fi
 
 # Point charts for domain d02
 echo "Running point-based Python charts for domain d02."
-run_meteogram "d02"
+#run_meteogram "d02"
 sleep 5
-run_skew_t "d02"
+#run_skew_t "d02"
 sleep 5
-run_vertical_wind "d02"
+#run_vertical_wind "d02"
 sleep 5
-run_vertical_wind_4km "d02"
+#run_vertical_wind_4km "d02"
 
 ###############################################################################
 # Scripts to run in parallel for domain d01
@@ -309,7 +305,6 @@ d01_scripts=(
   "cloud_top_temperature.py"
   "precipitable_water_inch.py"
   "cloud_top_temperature_rainbow.py"
-  "Road_Icing_Index_multicore_Publication_version.py"  
 )
 
 run_scripts_in_parallel "d01" "${d01_scripts[@]}"
@@ -325,11 +320,13 @@ d02_scripts=(
   "cloud_top_temperature.py"
   "precipitable_water_inch.py"
 
-  "Road_Icing_Index_multicore_Publication_version.py"
-
   "surface_1hr_precip_inch_slp_isotherm.py"
   "surface_1hr_snow_inch_slp_isotherm.py"
   "surface_1hr_water_equivalent_snow_inch_slp_isotherm.py"
+
+  "surface_24hr_precip_inch.py"
+  "surface_24hr_snow_inch.py"
+  "surface_24hr_water_equivalent_snow_inch.py"
 
   "surface_3hr_precip_inch.py"
   "surface_3hr_snow_inch.py"
@@ -358,8 +355,7 @@ d02_scripts=(
 
   "surface_windchill_degf_slp_wind_speed_dir.py"
   "surface_visibility_miles.py"
-  #"mixed_layer_lifted_index.py"
-  #"surface_based_lifted_index.py"
+
 )
 
 run_scripts_in_parallel "d02" "${d02_scripts[@]}"

@@ -18,8 +18,8 @@ conda activate wrf-python || { echo "Failed to activate conda environment."; exi
 
 # Define locations (each value is "lat,lon")
 declare -A locations=(
-    ["Premia, Italy"]="46.3167,8.3167"
-    ["Fiesch, Switzerland"]="46.3982,8.1339"
+["Madrid, ES"]="40.4168,-3.7038"  # Madrid, capital and largest city of Spain
+["Lisbon, PT"]="38.7223,-9.1393"  # Lisbon, capital and largest city of Portugal
 )
 
 ###############################################################################
@@ -58,6 +58,30 @@ run_scripts_in_parallel() {
 ###############################################################################
 # Point-based scripts for each selected location
 ###############################################################################
+
+# WBGT time series (Celsius)
+run_wbgt_timeseries() {
+  local domain="$1"
+
+  for location in "${!locations[@]}"; do
+    local lat_long="${locations[$location]}"
+    local lat long
+    lat=$(echo "$lat_long" | cut -d',' -f1)
+    long=$(echo "$lat_long" | cut -d',' -f2)
+
+    mkdir -p "$parent_folder/$domain/$location" || { echo "Failed to create directory $parent_folder/$domain/$location"; exit 1; }
+    cd "$parent_folder/$domain/$location" || { echo "Failed to cd into $parent_folder/$domain/$location"; exit 1; }
+
+    echo "Running wbgt_solar_timeseries_degc.py for $location in $domain (lat=$lat lon=$long)"
+    python3 "$script_dir/wbgt_solar_timeseries_degc.py" \
+      "$run_location" "$domain" "$location" "$lat" "$long" 2>&1 || {
+        echo "wbgt_solar_timeseries_degc.py failed for $location in $domain"
+        exit 1
+      }
+
+    cd "$script_dir" || { echo "Failed to cd back to $script_dir"; exit 1; }
+  done
+}
 
 # SkewT
 run_skew_t() {
@@ -191,13 +215,16 @@ mkdir -p "$parent_folder"
 
 find_wrf_run_directories
 
-#run_meteogram "d02"
+echo "Running point-based Python charts for domain d02."
+#run_wbgt_timeseries "d02"
 sleep 5
-#run_skew_t "d02"
+run_meteogram "d02"
 sleep 5
-#run_vertical_wind "d02"
+run_skew_t "d02"
 sleep 5
-#run_vertical_wind_4km "d02"
+run_vertical_wind "d02"
+sleep 5
+run_vertical_wind_4km "d02"
 
 ###############################################################################
 # Scripts to run in parallel for domain d01
@@ -221,7 +248,6 @@ d01_scripts=(
   "cloud_top_temperature.py"
   "precipitable_water_cm.py"
   "cloud_top_temperature_rainbow.py"
-  "Road_Icing_Index_multicore_Publication_version.py"
 )
 
 run_scripts_in_parallel "d01" "${d01_scripts[@]}"
@@ -237,11 +263,13 @@ d02_scripts=(
   "cloud_top_temperature.py"
   "precipitable_water_cm.py"
 
-  "Road_Icing_Index_multicore_Publication_version.py"
-
   "surface_1hr_precip_mm_slp_isotherm.py"
   "surface_1hr_snow_mm_slp_isotherm.py"
   "surface_1hr_water_equivalent_snow_mm_slp_isotherm.py"
+
+  "surface_24hr_precip_mm.py"
+  "surface_24hr_snow_mm.py"
+  "surface_24hr_water_equivalent_snow_mm.py"
 
   "surface_3hr_precip_mm.py"
   "surface_3hr_snow_mm.py"
@@ -271,8 +299,7 @@ d02_scripts=(
 
   "surface_windchill_degc_slp_wind_speed_dir.py"
   "surface_visibility_km.py"
-  #"mixed_layer_lifted_index.py"
-  #"surface_based_lifted_index.py"
+
 )
 
 run_scripts_in_parallel "d02" "${d02_scripts[@]}"

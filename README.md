@@ -113,8 +113,6 @@ You will notice that some scripts have similar names. That is intentional. I dev
 **Description:** Stability and thermodynamic diagnostics intended to summarize the convective environment and changes in instability, inhibition, and parcel buoyancy. These are the types of fields forecasters commonly use to assess convective initiation potential, severe weather environment quality, and evolving mesoscale instability gradients.
 
 * convective_cape_cin.py
-* mixed_layer_lifted_index.py, slow to run, very computationally heavy
-* surface_based_lifted_index.py, slow to run, very computationally heavy
 
 ![wrf_d02_CAPE_CIN](https://github.com/user-attachments/assets/dae3a5dc-5ab1-4e71-a86a-a627d6fa61f8)
 

@@ -230,6 +230,8 @@ You will notice that some scripts have similar names. That is intentional. I dev
 ![wrf_d02_SkewT_LogP](https://github.com/user-attachments/assets/be71126f-333d-4ab0-8370-78feec19ea96)
 
 <img width="5000" height="6000" alt="meteogram_Cape Canaveral, FL_imperial" src="https://github.com/user-attachments/assets/ede4775c-33fd-47b7-976d-6d4bd4b79d9b" />
+<img width="2880" height="1620" alt="wrf_d02_time_height_wind_barbs_20260608180000" src="https://github.com/user-attachments/assets/5de476fa-f30a-4052-ab0f-a9fa2a6d53bb" />
+
 
 
 ---

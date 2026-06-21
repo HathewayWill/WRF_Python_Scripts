@@ -18,8 +18,8 @@ conda activate wrf-python || { echo "Failed to activate conda environment."; exi
 
 # Define locations (each value is "lat,lon")
 declare -A locations=(
-["Madrid, ES"]="40.4168,-3.7038"  # Madrid, capital and largest city of Spain
-["Lisbon, PT"]="38.7223,-9.1393"  # Lisbon, capital and largest city of Portugal
+["Houston, TX"]="29.7604,-95.3698"  # Houston, largest city in Texas
+["Dallas, TX"]="32.7767,-96.7970"   # Dallas, major city in North Texas
 )
 
 ###############################################################################

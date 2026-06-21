@@ -17,7 +17,10 @@ source "$CONDA_BASE/etc/profile.d/conda.sh" || { echo "Failed to source Conda pr
 conda activate wrf-python || { echo "Failed to activate conda environment."; exit 1; }
 
 # Define locations (station/city name -> "lat,lon")
-
+declare -A locations=(
+["Guatemala City, GT"]="14.6349,-90.5069"  # Capital and largest city of Guatemala
+["Quetzaltenango, GT"]="14.8349,-91.5189"  # Second-largest city, also known as Xela
+)
 ###############################################################################
 # Helper function: run a list of gridded scripts in parallel for one domain
 ###############################################################################

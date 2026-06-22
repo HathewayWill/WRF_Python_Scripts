@@ -247,6 +247,10 @@ You will notice that some scripts have similar names. That is intentional. I dev
 * tropical_surface_sst_degc_slp_wind_speed_dir.py
 * tropical_surface_sst_degf_slp_wind_speed_dir.py
 
+<img width="2210" height="1851" alt="wrf_d02_SLP_WIND_TEMP" src="https://github.com/user-attachments/assets/0831cdfc-1e91-4375-88bd-c75909ee73d4" />
+
+<img width="2074" height="1851" alt="wrf_d02_SLP_WIND_SSTEMP" src="https://github.com/user-attachments/assets/34b8c4d3-ecca-4eeb-accd-78cf623ac7c3" />
+
 ---
 
 ## How you run them

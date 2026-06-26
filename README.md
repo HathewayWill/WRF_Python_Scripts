@@ -4,12 +4,12 @@ The day is finally here. After months, and honestly years, of development, I am 
 
 Over the years I have been developing Python tools that highlight WRF’s capabilities for operational forecasting and real-world analysis. These scripts were built not only to showcase WRF, but also to be shared with the community for free, especially for meteorologists and atmospheric scientists who may not have much Python experience but still want access to high-resolution graphics, high automation and batch processing, and a wide range of meteorological diagnostics and products. Every script has been standardized across the collection, so the workflow, structure, and commenting style are consistent, making it easier to understand what each script is doing, adapt it to your region, and modify it for your own needs.
 
-In the Google Drive link and on my GitHub page, you will find a folder called “Python Charts that work World.” Inside that folder you will find 93 Python scripts and 5 Bash shell scripts that run the full suite of graphics, including multicore execution options. The products span synoptic and mesoscale dynamics, severe weather diagnostics, and simulated remote sensing, all based directly on WRF output. The goal is to make a complete, automated, operational-ready post-processing package that takes raw WRF output and turns it into briefing-quality graphics with minimal user intervention.
+In the Google Drive link and on my GitHub page, you will find a folder called “Python Charts that work World.” Inside that folder you will find 96 Python scripts and 5 Bash shell scripts that run the full suite of graphics, including multicore execution options. The products span synoptic and mesoscale dynamics, severe weather diagnostics, and simulated remote sensing, all based directly on WRF output. The goal is to make a complete, automated, operational-ready post-processing package that takes raw WRF output and turns it into briefing-quality graphics with minimal user intervention.
 
 **GitHub profile:** 
 [https://github.com/HathewayWill/](https://github.com/HathewayWill/)
-**WRF-MOSIT repo:** 
-[https://github.com/HathewayWill/WRF-MOSIT](https://github.com/HathewayWill/WRF-MOSIT/WRF-Python)
+**WRF Python Scripts repo:** 
+[https://github.com/HathewayWill/WRF_Python_Scripts](https://github.com/HathewayWill/WRF_Python_Scripts)
 
 ---
 
@@ -253,9 +253,105 @@ You will notice that some scripts have similar names. That is intentional. I dev
 
 ---
 
+## 10) WRF-Native Trajectory Analysis
+
+**Description:** WRF-native air parcel trajectory tools designed to calculate back trajectories, forward trajectories, and paired back/forward trajectories directly from WRF output. These scripts use WRF model fields directly rather than requiring an external trajectory package. They are intended for source-region analysis, downstream transport analysis, boundary-layer pathway review, and research workflows where the trajectory calculation should remain tied to the same WRF simulation being analyzed.
+
+These scripts read raw WRF U, V, and W fields, destagger and rotate winds into earth-relative flow, use WRF vertical velocity for passive 3D parcel motion, and automatically support nested-domain fallback. For example, if a parcel starts in **d03** and exits that nest, the script continues the trajectory using **d02**, then **d01** if needed. This allows inner-domain trajectory calculations to continue across the full model pathway without stopping at the nest boundary.
+
+The default trajectory timestep is **60 minutes**, which keeps the output cleaner and works well for standard hourly WRF history output. Users can still choose a finer timestep with `--dt-min`, such as `--dt-min 15`, when higher-frequency WRF output is available or when a sensitivity test is needed.
+
+* WRF_Back_Trajectory.py
+* WRF_Forward_Trajectory.py
+* WRF_Back_Forward_Trajectory.py
+
+### Standard trajectory method
+
+The default academic workflow uses:
+
+* Raw WRF U and V wind fields, destaggered and rotated to earth-relative flow
+* WRF W for passive 3D vertical parcel motion
+* Model-level lower-boundary clipping and continuation when a parcel reaches the lowest usable WRF mass level
+* File-aware timing, where the scripts automatically detect available WRF output times
+* Nested-domain fallback, such as **d03 → d02 → d01**
+* Cartopy mapping with a vertical parcel-path panel below the map
+* CSV output for each trajectory and combined CSV output when multiple heights or locations are used
+
+### Back trajectory example
+
+```bash
+python3 WRF_Back_Trajectory.py \
+  d03 SanMarcos \
+  29.8899 -97.9961 \
+  --wrf-dir /home/workhorse/WRF_Intel/WRF-4.7.1/run \
+  --height-levels-m 100,500,1000
+```
+
+This script starts from the latest available WRF output time by default and traces parcels backward through the available model period.
+
+![WRF back trajectory example](images/wrf_back_trajectory_sanmarcos_100_500_1000m.png)
+
+### Forward trajectory example
+
+```bash
+python3 WRF_Forward_Trajectory.py \
+  d03 SanMarcos \
+  29.8899 -97.9961 \
+  --wrf-dir /home/workhorse/WRF_Intel/WRF-4.7.1/run \
+  --height-levels-m 100,500,1000
+```
+
+This script starts from the first available WRF output time by default and traces parcels forward through the available model period.
+
+![WRF forward trajectory example](images/wrf_forward_trajectory_sanmarcos_100_500_1000m.png)
+
+### Paired back/forward trajectory example
+
+```bash
+python3 WRF_Back_Forward_Trajectory.py \
+  d03 SanMarcos \
+  29.8899 -97.9961 \
+  --wrf-dir /home/workhorse/WRF_Intel/WRF-4.7.1/run \
+  --height-levels-m 100,500,1000
+```
+
+This script uses the middle of the available WRF period by default, traces parcels backward to the beginning of the model period, and traces parcels forward to the end of the model period. In the combined CSV, negative `age_hours` values are backward in time, `0` is the launch time, and positive `age_hours` values are forward in time.
+
+![WRF back/forward trajectory example](images/wrf_back_forward_trajectory_sanmarcos_100_500_1000m.png)
+
+### Multiple locations and deeper vertical profiles
+
+Each trajectory script supports additional launch locations and multiple starting heights:
+
+```bash
+python3 WRF_Back_Trajectory.py \
+  d03 SanMarcos \
+  29.8899 -97.9961 \
+  --wrf-dir /home/workhorse/WRF_Intel/WRF-4.7.1/run \
+  --height-levels-m 50,100,250,500,750,1000,1500,2000,2500,3000,4000,5000 \
+  --extra-location Austin,30.2672,-97.7431 \
+  --extra-location CorpusChristi,27.8006,-97.3964
+```
+
+You can also use a CSV file with `city`, `lat`, and `lon` columns through the `--locations-file` option.
+
+### Trajectory outputs
+
+Typical trajectory outputs include:
+
+* One CSV file per launch height and location
+* One combined CSV file when multiple heights or locations are used
+* One PNG image with the map and vertical parcel-path panel
+* Domain-tracking columns such as `wrf_domain_used`
+* Parcel-height columns such as `height_agl_m`, `height_agl_used_m`, and `height_msl_m`
+* Wind columns such as `u_east_mps`, `v_north_mps`, and `w_mps`
+
+
+---
+
 ## How you run them
 
-The five Bash shell scripts are designed to automate execution. They can activate the appropriate environment, locate or accept a WRF output directory, create date-stamped output folders, and run the chart suite in a structured way across domains, including multicore parallel processing where configured. The intent is that you can generate an entire forecast graphics package in one run, organized by domain and location, without manually running dozens of individual commands.
+The five Bash shell scripts are designed to automate execution. They can activate the appropriate environment, locate or accept a WRF output directory, create date-stamped output folders, and run the chart suite in a structured way across domains, including multicore parallel processing where configured. The trajectory scripts can also be run directly from the command line because they include their own file-aware WRF output discovery and timing logic. The intent is that you can generate an entire forecast graphics package in one run, organized by domain and location, without manually running dozens of individual commands.
 
 ---
 

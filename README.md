@@ -289,7 +289,7 @@ python3 WRF_Back_Trajectory.py \
 
 This script starts from the latest available WRF output time by default and traces parcels backward through the available model period.
 
-![WRF back trajectory example](images/wrf_back_trajectory_sanmarcos_100_500_1000m.png)
+<img width="3732" height="1977" alt="wrf_backtraj_d03_MULTI_20260626_000000Z_levels_100-500-1000mAGL_passive_w_modelclip_raw" src="https://github.com/user-attachments/assets/5d1263a4-0d3a-42cb-bed9-fa06f0da22b7" />
 
 ### Forward trajectory example
 
@@ -303,7 +303,7 @@ python3 WRF_Forward_Trajectory.py \
 
 This script starts from the first available WRF output time by default and traces parcels forward through the available model period.
 
-![WRF forward trajectory example](images/wrf_forward_trajectory_sanmarcos_100_500_1000m.png)
+<img width="3732" height="1977" alt="wrf_fwdtraj_d03_MULTI_20260625_000000Z_levels_100-500-1000mAGL_passive_w_modelclip_raw" src="https://github.com/user-attachments/assets/83e16636-8ee7-456f-904b-1600fd03dec2" />
 
 ### Paired back/forward trajectory example
 
@@ -317,7 +317,7 @@ python3 WRF_Back_Forward_Trajectory.py \
 
 This script uses the middle of the available WRF period by default, traces parcels backward to the beginning of the model period, and traces parcels forward to the end of the model period. In the combined CSV, negative `age_hours` values are backward in time, `0` is the launch time, and positive `age_hours` values are forward in time.
 
-![WRF back/forward trajectory example](images/wrf_back_forward_trajectory_sanmarcos_100_500_1000m.png)
+<img width="3732" height="1977" alt="wrf_backforwardtraj_d03_MULTI_20260625_120000Z_levels_100-500-1000mAGL_passive_w_modelclip_raw" src="https://github.com/user-attachments/assets/11200ee1-ac50-4d57-9d1a-3d39987df5d5" />
 
 ### Multiple locations and deeper vertical profiles
 
@@ -332,6 +332,9 @@ python3 WRF_Back_Trajectory.py \
   --extra-location Austin,30.2672,-97.7431 \
   --extra-location CorpusChristi,27.8006,-97.3964
 ```
+
+<img width="3732" height="1977" alt="wrf_backtraj_d03_MULTI_20260626_000000Z_levels_50-100-250-500-750-1000-1500-2000-2500-3000-4000-5000mAGL_passive_w_modelclip_raw" src="https://github.com/user-attachments/assets/253bf773-e3cd-4086-96bf-6ad8c52e7c1c" />
+
 
 You can also use a CSV file with `city`, `lat`, and `lon` columns through the `--locations-file` option.
 

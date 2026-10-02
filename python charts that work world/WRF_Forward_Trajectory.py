@@ -2196,7 +2196,7 @@ def main() -> None:
             png_path = out_dir / f"wrf_fwdtraj_{args.domain}_MULTI_{start_tag}_{height_group_tag}_{mode_tag}_{source_tag}.png"
         title = (
             f"WRF Back Trajectory {args.domain}\n"
-            f"Start {start_time_utc.strftime('%Y-%m-%d %H:%MZ')}, "
+            f"Start {start_time_utc.strftime('%H:%M:%SZ %Y-%m-%d')}, "
             f"{format_height_summary(height_values)}, {args.back_hours:g} h forward"
         )
         map_frames = domain_frame_sets[-1][1] if domain_frame_sets else frames

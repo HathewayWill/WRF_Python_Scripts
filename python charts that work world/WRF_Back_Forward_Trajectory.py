@@ -2121,7 +2121,7 @@ def main() -> None:
             png_path = out_dir / f"wrf_backforwardtraj_{args.domain}_MULTI_{start_tag}_{height_group_tag}_{mode_tag}_{source_tag}.png"
         title = (
             f"WRF Back/Forward Trajectory {args.domain}\n"
-            f"Launch {start_time_utc.strftime('%Y-%m-%d %H:%MZ')}, "
+            f"Launch {start_time_utc.strftime('%H:%M:%SZ %Y-%m-%d')}, "
             f"{format_height_summary(height_values)}, "
             f"{args.back_hours:g} h back / {args.forward_hours:g} h forward"
         )

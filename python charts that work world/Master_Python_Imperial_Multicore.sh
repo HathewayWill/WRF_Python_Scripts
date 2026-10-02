@@ -18,9 +18,9 @@ conda activate wrf-python || { echo "Failed to activate conda environment."; exi
 
 # Define locations (each value is "lat,lon")
 declare -A locations=(
-["AustinBergstrom"]="30.1975,-97.6664"  # Austin-Bergstrom International Airport (AUS), Austin
-["Houston, TX"]="29.7604,-95.3698"  # Houston, largest city in Texas
-["Dallas, TX"]="32.7767,-96.7970"   # Dallas, major city in North Texas
+  ["Austin, TX"]="30.2672,-97.7431"            # Capital of Texas
+  ["San Antonio, TX"]="29.4241,-98.4936"       # Major city known for the Alamo
+  ["Fredericksburg, TX"]="30.2752,-98.8719"    # Known for wineries and German heritage
 )
 ###############################################################################
 # WRF-native trajectory settings

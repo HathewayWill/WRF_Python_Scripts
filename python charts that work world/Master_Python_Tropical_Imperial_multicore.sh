@@ -18,8 +18,6 @@ conda activate wrf-python || { echo "Failed to activate conda environment."; exi
 
 # Define locations
 declare -A locations=(
-	["Agana, GU"]="13.4757,144.7489"  # Hagåtña (formerly Agaña), the capital of Guam
-	["Capitol Hill, MP"]="15.2125,145.7547"  # Capitol Hill, Saipan, Northern Mariana Islands
 )
 ###############################################################################
 # WRF-native trajectory settings

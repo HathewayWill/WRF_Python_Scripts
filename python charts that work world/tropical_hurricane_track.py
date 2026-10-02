@@ -1504,9 +1504,9 @@ def valid_title_text(df: pd.DataFrame) -> str:
     start_time, end_time = valid_period_from_track(df)
 
     if start_time == end_time:
-        return f"Valid: {start_time:%HZ %Y-%m-%d}"
+        return f"Valid: {start_time:%H:%M:%SZ %Y-%m-%d}"
 
-    return f"Valid: {start_time:%HZ %Y-%m-%d} to {end_time:%HZ %Y-%m-%d}"
+    return f"Valid: {start_time:%H:%M:%SZ %Y-%m-%d} to {end_time:%H:%M:%SZ %Y-%m-%d}"
 
 
 def grid_spacing_title_text(df: pd.DataFrame) -> str:
@@ -1621,7 +1621,7 @@ def plot_track_map(
             hours_since_start = (current_time - start_time).total_seconds() / 3600.0
 
             if abs(hours_since_start % label_interval_hours) < 0.01:
-                label = current_time.strftime("%m-%d %HZ")
+                label = current_time.strftime("%H:%M:%SZ %Y-%m-%d")
 
                 ax.text(
                     float(row[lon_col]),

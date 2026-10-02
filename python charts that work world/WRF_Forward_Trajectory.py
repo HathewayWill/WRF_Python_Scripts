@@ -1796,7 +1796,7 @@ def plot_trajectory_map(
 
     title_left = (
         f"WRF forward trajectories | {domain_text} | {loc_text}\n"
-        f"Start: {start_time_utc:%HZ %Y-%m-%d} | Length: {args.back_hours:g} h forward | "
+        f"Start: {start_time_utc:%H:%M:%SZ %Y-%m-%d} | Length: {args.back_hours:g} h forward | "
         f"Heights: {height_text} | {mode_text}"
     )
     title_right = f"Map grid: {map_domain} {avg_dx_km} x {avg_dy_km} km"

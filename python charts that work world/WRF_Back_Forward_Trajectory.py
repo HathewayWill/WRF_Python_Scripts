@@ -1675,7 +1675,7 @@ def plot_trajectory_map(
 
     title_left = (
         f"WRF back/forward trajectories | {domain_text} | {loc_text}\n"
-        f"Launch: {start_time_utc:%HZ %Y-%m-%d} | "
+        f"Launch: {start_time_utc:%H:%M:%SZ %Y-%m-%d} | "
         f"Back: {args.back_hours:g} h | Forward: {args.forward_hours:g} h | "
         f"Heights: {height_text} | {mode_text}"
     )

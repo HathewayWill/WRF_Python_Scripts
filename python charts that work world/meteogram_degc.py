@@ -265,7 +265,7 @@ def process_frame(args):
             xy = moving_nest_ll_to_xy(ncfile, latitude, longitude, time_index)
         except Exception as e:
             print(
-                f"Skipping {valid_dt:%Y-%m-%d %H:%M:%S} UTC: "
+                f"Skipping {valid_dt:%H:%M:%SZ %Y-%m-%d}: "
                 f"could not locate lat={latitude}, lon={longitude} "
                 f"in {os.path.basename(ncfile_path)}: {e}"
             )
@@ -273,7 +273,7 @@ def process_frame(args):
 
         if xy is None:
             print(
-                f"Skipping {valid_dt:%Y-%m-%d %H:%M:%S} UTC: "
+                f"Skipping {valid_dt:%H:%M:%SZ %Y-%m-%d}: "
                 f"lat={latitude}, lon={longitude} is outside the moving "
                 f"{os.path.basename(ncfile_path)} domain."
             )

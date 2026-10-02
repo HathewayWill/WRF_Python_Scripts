@@ -535,8 +535,11 @@ def process_wrf_file(args):
     minute = wrf_file_path[
         wrf_file_path.find("wrfout") + 25 : wrf_file_path.find("wrfout") + 27
     ]
+    second = wrf_file_path[
+        wrf_file_path.find("wrfout") + 28 : wrf_file_path.find("wrfout") + 30
+    ]
 
-    print(f"Plotting data: {year}/{month}/{day} {hour}:{minute} UTC")
+    print(f"Plotting data: {hour}:{minute}:{second}Z {year}-{month}-{day}")
 
     ############################################
     # Extracting Key Variables from WRF Model #
@@ -817,7 +820,7 @@ def process_wrf_file(args):
         loc="left",
         fontsize=13,
     )
-    plt.title(f"Valid: {hour}:{minute}Z {year}-{month}-{day}", loc="right", fontsize=13)
+    plt.title(f"Valid: {hour}:{minute}:{second}Z {year}-{month}-{day}", loc="right", fontsize=13)
 
     output_file_name = f"wrf_{domain}_roadicing_{year}{month}{day}_{hour}_{minute}.png"
     plt.savefig(

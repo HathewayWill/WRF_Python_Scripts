@@ -343,7 +343,7 @@ def process_frame(args):
     # Worker-local Dataset (no sharing across processes)
     with Dataset(ncfile_path) as ncfile:
         valid_dt = get_valid_time(ncfile, ncfile_path, time_index)
-        print(f"Plotting data: {valid_dt:%Y/%m/%d %H:%M:%S} UTC")
+        print(f"Plotting data: {valid_dt:%H:%M:%SZ %Y-%m-%d}")
 
         u = wrf.getvar(ncfile, "ua", timeidx=time_index)
         v = wrf.getvar(ncfile, "va", timeidx=time_index)

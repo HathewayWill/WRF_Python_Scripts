@@ -326,7 +326,7 @@ def process_frame(args):
     with Dataset(ncfile_path) as nc:
         valid_dt = get_valid_time(nc, ncfile_path, time_index)
 
-        print(f"Plotting data: {valid_dt:%Y/%m/%d %H:%M:%S} UTC")
+        print(f"Plotting data: {valid_dt:%H:%M:%SZ %Y-%m-%d}")
 
         # Sea-level pressure (hPa)
         SLP = wrf.getvar(nc, "slp", units="hPa", timeidx=time_index)
@@ -588,7 +588,7 @@ def process_frame(args):
             fontsize=13,
         )
         plt.title(
-            f"Valid: {valid_dt:%H:%M:%S}Z {valid_dt:%Y-%m-%d}",
+            f"Valid: {valid_dt:%H:%M:%SZ %Y-%m-%d}",
             loc="right",
             fontsize=13,
         )

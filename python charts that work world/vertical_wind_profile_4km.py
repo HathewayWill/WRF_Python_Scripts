@@ -409,7 +409,7 @@ def derive_pressure_height_mapping(frames, lat, lon, p_levels_all):
             print(
                 "Using "
                 f"{ncfile_path} time_index={time_index} "
-                f"({valid_dt:%Y/%m/%d %H:%M:%S} UTC) "
+                f"({valid_dt:%H:%M:%SZ %Y-%m-%d}) "
                 "to derive standard pressure→height mapping."
             )
             if skipped:
@@ -700,10 +700,10 @@ def main():
     for dt in tick_times:
         if dt.hour == 0 and dt.minute == 0:
             tick_labels.append(
-                dt.strftime("%m-%d %H:%M")
+                dt.strftime("%H:%M:%SZ %Y-%m-%d")
             )  # date (no year) + time at 00Z
         else:
-            tick_labels.append(dt.strftime("%H:%M"))  # time only otherwise
+            tick_labels.append(dt.strftime("%H:%M:%SZ %Y-%m-%d"))  # time only otherwise
 
     ax.set_xticks(time_sel)
     ax.set_xticklabels(tick_labels, rotation=90, ha="center")

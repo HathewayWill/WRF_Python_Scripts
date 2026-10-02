@@ -382,7 +382,7 @@ def process_frame(args):
     with Dataset(ncfile_path) as ncfile:
         # Valid time from metadata / filename
         valid_dt = get_valid_time(ncfile, ncfile_path, time_index)
-        print(f"Plotting data: {valid_dt:%Y/%m/%d %H:%M:%S} UTC")
+        print(f"Plotting data: {valid_dt:%H:%M:%SZ %Y-%m-%d}")
 
         # -------------------------------------------------------------------------
         # Physics block: variable access (time-dependent)
@@ -566,7 +566,7 @@ def process_frame(args):
 
         if valid_ter.size == 0:
             print(
-                f"Skipping frame {valid_dt:%Y/%m/%d %H:%M:%S} UTC: "
+                f"Skipping frame {valid_dt:%H:%M:%SZ %Y-%m-%d}: "
                 "no valid terrain values"
             )
             plt.close(fig)
@@ -602,7 +602,7 @@ def process_frame(args):
 
         if ter_levels.size < 2:
             print(
-                f"Skipping frame {valid_dt:%Y/%m/%d %H:%M:%S} UTC: "
+                f"Skipping frame {valid_dt:%H:%M:%SZ %Y-%m-%d}: "
                 "invalid terrain contour levels"
             )
             plt.close(fig)

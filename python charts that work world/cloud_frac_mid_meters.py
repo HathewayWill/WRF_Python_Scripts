@@ -344,7 +344,7 @@ def process_frame(args):
 
         # Time metadata for this frame
         valid_dt = get_valid_time(ncfile, ncfile_path, time_index)
-        print(f"Plotting data: {valid_dt:%Y/%m/%d %H:%M:%S} UTC")
+        print(f"Plotting data: {valid_dt:%H:%M:%SZ %Y-%m-%d}")
 
         # -------------------------------------------------------------------------
         # Physics block (DO NOT CHANGE)

@@ -371,7 +371,7 @@ def process_frame(args):
         valid_dt = get_valid_time(ncfile, ncfile_path, time_index)
         prev_valid_dt = get_valid_time(prev_ncfile, prev_ncfile_path, prev_time_index)
 
-        print(f"Plotting data: {valid_dt:%Y/%m/%d %H:%M:%S} UTC")
+        print(f"Plotting data: {valid_dt:%H:%M:%SZ %Y-%m-%d}")
 
         earliest_datetime = prev_valid_dt
         latest_datetime = valid_dt
@@ -628,8 +628,8 @@ def process_frame(args):
             fontsize=13,
         )
         plt.title(
-            f"Valid: {earliest_datetime:%Y-%m-%d %H:%M} UTC\n"
-            f"{latest_datetime:%Y-%m-%d %H:%M} UTC",
+            f"Valid: {earliest_datetime:%H:%M:%SZ %Y-%m-%d}\n"
+            f"{latest_datetime:%H:%M:%SZ %Y-%m-%d}",
             loc="right",
             fontsize=13,
         )

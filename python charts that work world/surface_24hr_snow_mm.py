@@ -374,7 +374,7 @@ def process_frame(args):
         valid_dt = get_valid_time(ncfile, ncfile_path, time_index)
         earliest_dt = valid_dt - timedelta(hours=24)
 
-        print(f"Plotting data: {valid_dt:%Y/%m/%d %H:%M:%S} UTC")
+        print(f"Plotting data: {valid_dt:%H:%M:%SZ %Y-%m-%d}")
 
         # -------------------------------------------------------------------------
         # Physics: retrieve fields exactly as original, but at this time_index
@@ -547,8 +547,8 @@ def process_frame(args):
             fontsize=13,
         )
         plt.title(
-            f"Valid: {earliest_dt:%Y-%m-%d %H:%M} UTC\n"
-            f"{valid_dt:%Y-%m-%d %H:%M} UTC",
+            f"Valid: {earliest_dt:%H:%M:%SZ %Y-%m-%d}\n"
+            f"{valid_dt:%H:%M:%SZ %Y-%m-%d}",
             loc="right",
             fontsize=13,
         )

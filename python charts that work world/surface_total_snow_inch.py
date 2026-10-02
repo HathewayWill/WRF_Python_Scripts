@@ -352,8 +352,8 @@ def process_frame(args):
         end_total_snow = to_np(snow_end * 39.3700787402)  # inches
         end_valid_dt = get_valid_time(nc_end, end_ncfile_path, end_time_index)
 
-        print(f"Plotting data: {start_valid_dt:%Y/%m/%d %H:%M:%S} UTC")
-        print(f"Plotting data: {end_valid_dt:%Y/%m/%d %H:%M:%S} UTC")
+        print(f"Plotting data: {start_valid_dt:%H:%M:%SZ %Y-%m-%d}")
+        print(f"Plotting data: {end_valid_dt:%H:%M:%SZ %Y-%m-%d}")
 
         # Accumulated snow over forecast period (diagnostic unchanged)
         total_forecast_snow = end_total_snow - start_total_snow
@@ -525,8 +525,8 @@ def process_frame(args):
         )
         plt.title(
             f"Valid:\n"
-            f"{start_hour}:{start_minute}Z {start_year}-{start_month}-{start_day}\n"
-            f"{end_hour}:{end_minute}Z {end_year}-{end_month}-{end_day}",
+            f"{start_valid_dt:%H:%M:%SZ %Y-%m-%d}\n"
+            f"{end_valid_dt:%H:%M:%SZ %Y-%m-%d}",
             loc="right",
             fontsize=10,
         )

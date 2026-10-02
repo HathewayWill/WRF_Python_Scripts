@@ -548,8 +548,8 @@ def process_frame(args):
         )
         plt.title(
             f"Valid:\n"
-            f"{start_hour}:{start_minute}Z {start_year}-{start_month}-{start_day}\n"
-            f"{end_hour}:{end_minute}Z {end_year}-{end_month}-{end_day}",
+            f"{start_valid_dt:%H:%M:%SZ %Y-%m-%d}\n"
+            f"{end_valid_dt:%H:%M:%SZ %Y-%m-%d}",
             loc="right",
             fontsize=10,
         )

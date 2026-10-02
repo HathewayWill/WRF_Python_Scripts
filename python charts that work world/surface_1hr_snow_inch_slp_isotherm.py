@@ -348,7 +348,7 @@ def process_frame(args):
     with Dataset(ncfile_path) as ncfile:
         # Valid time for current frame
         valid_dt = get_valid_time(ncfile, ncfile_path, time_index)
-        print(f"Plotting data: {valid_dt:%Y/%m/%d %H:%M:%S} UTC")
+        print(f"Plotting data: {valid_dt:%H:%M:%SZ %Y-%m-%d}")
 
         # -------------------------------------------------------------------------
         # Physics: SLP and cumulative snow depth (SNOWH → inches)
@@ -587,7 +587,7 @@ def process_frame(args):
             fontsize=13,
         )
         plt.title(
-            f"Accumulation: {earliest_dt:%Y-%m-%d %H:%M} – {latest_dt:%Y-%m-%d %H:%M} UTC",
+            f"Accumulation: {earliest_dt:%H:%M:%SZ %Y-%m-%d} – {latest_dt:%H:%M:%SZ %Y-%m-%d}",
             loc="right",
             fontsize=13,
         )

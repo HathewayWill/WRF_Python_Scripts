@@ -355,8 +355,8 @@ def process_frame(args):
 
         print(
             f"Plotting accumulated snow from\n"
-            f"{start_valid_dt:%Y/%m/%d %H:%M:%S} UTC\n"
-            f"{end_valid_dt:%Y/%m/%d %H:%M:%S} UTC"
+            f"{start_valid_dt:%H:%M:%SZ %Y-%m-%d}\n"
+            f"{end_valid_dt:%H:%M:%SZ %Y-%m-%d}"
         )
 
         # -------------------------------------------------------------------------
@@ -529,8 +529,8 @@ def process_frame(args):
         )
         plt.title(
             "Valid:\n"
-            f"{start_valid_dt:%H:%MZ %Y-%m-%d}\n"
-            f"{end_valid_dt:%H:%MZ %Y-%m-%d}",
+            f"{start_valid_dt:%H:%M:%SZ %Y-%m-%d}\n"
+            f"{end_valid_dt:%H:%M:%SZ %Y-%m-%d}",
             loc="right",
             fontsize=10,
         )

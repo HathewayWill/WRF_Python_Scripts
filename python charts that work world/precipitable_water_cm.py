@@ -363,7 +363,7 @@ def process_frame(args):
 
         # Valid time from WRF metadata or filename fallback
         valid_dt = get_valid_time(ncfile, ncfile_path, time_index)
-        print(f"Plotting Precipitable Water: {valid_dt:%Y/%m/%d %H:%M:%S} UTC")
+        print(f"Plotting Precipitable Water: {valid_dt:%H:%M:%SZ %Y-%m-%d}")
 
         # -------------------------------------------------------------------------
         # Physics: get PW and convert units (immutable)

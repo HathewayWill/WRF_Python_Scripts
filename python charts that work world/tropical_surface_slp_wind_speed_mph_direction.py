@@ -343,7 +343,7 @@ def process_frame(args):
     with Dataset(ncfile_path) as ncfile:
         # Valid time (prefer model metadata)
         valid_dt = get_valid_time(ncfile, ncfile_path, time_index)
-        print(f"Plotting data: {valid_dt:%Y/%m/%d %H:%M:%S} UTC")
+        print(f"Plotting data: {valid_dt:%H:%M:%SZ %Y-%m-%d}")
 
         # -------------------------------------------------------------------------
         # Get base WRF vars at this time index (physics unchanged except timeidx)

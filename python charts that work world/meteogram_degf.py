@@ -273,7 +273,7 @@ def process_frame(args):
     with Dataset(ncfile_path) as ncfile:
         # Valid time from metadata (preferred) or filename
         valid_dt = get_valid_time(ncfile, ncfile_path, time_index)
-        print(f"Extracting meteogram data: {valid_dt:%Y/%m/%d %H:%M:%S} UTC")
+        print(f"Extracting meteogram data: {valid_dt:%H:%M:%SZ %Y-%m-%d}")
 
         # ------------------------------------------------------------------
         # Find grid indices for target lat/lon.
@@ -792,14 +792,14 @@ if __name__ == "__main__":
     # ======================================================================
     # Shared time axis formatting & figure title
     # ======================================================================
-    ax[-1].xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m-%d %H:%M"))
+    ax[-1].xaxis.set_major_formatter(mdates.DateFormatter("%H:%M:%SZ %Y-%m-%d"))
     plt.xticks(rotation=90)
     ax[-1].set_xlabel("UTC Time (Z)")
 
     plt.suptitle(
         f"Meteogram for {city} at {latitude}°, {longitude}°\n"
-        f"Time Period: {time_points[0].strftime('%Y-%m-%d %H:%MZ')} "
-        f"to {time_points[-1].strftime('%Y-%m-%d %H:%MZ')}",
+        f"Time Period: {time_points[0].strftime('%H:%M:%SZ %Y-%m-%d')} "
+        f"to {time_points[-1].strftime('%H:%M:%SZ %Y-%m-%d')}",
         fontsize=18,
     )
 

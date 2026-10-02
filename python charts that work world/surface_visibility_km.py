@@ -511,7 +511,7 @@ def process_frame(args):
     with Dataset(ncfile_path) as ncfile:
         # Determine valid time
         valid_dt = get_valid_time(ncfile, ncfile_path, time_index)
-        print(f"Processing: {valid_dt:%Y/%m/%d %H:%M:%S} UTC")
+        print(f"Processing: {valid_dt:%H:%M:%SZ %Y-%m-%d}")
 
         # AFWA visibility (meters)
         vis_total_m, vis_alpha = afwa_visibility_from_wrf(ncfile, time_index)

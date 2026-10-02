@@ -369,7 +369,7 @@ def process_frame(args):
 
         # Valid time for current frame
         valid_dt = get_valid_time(ncfile, ncfile_path, time_index)
-        print(f"Plotting data: {valid_dt:%Y/%m/%d %H:%M:%S} UTC")
+        print(f"Plotting data: {valid_dt:%H:%M:%SZ %Y-%m-%d}")
 
         # -------------------------------------------------------------------------
         # Physics: SLP and snow water equivalent (inches)
@@ -640,8 +640,8 @@ def process_frame(args):
             fontsize=13,
         )
         plt.title(
-            f"Valid: {earliest_dt:%Y-%m-%d %H:%M} UTC\n"
-            f"{latest_dt:%Y-%m-%d %H:%M} UTC",
+            f"Valid: {earliest_dt:%H:%M:%SZ %Y-%m-%d}\n"
+            f"{latest_dt:%H:%M:%SZ %Y-%m-%d}",
             loc="right",
             fontsize=13,
         )

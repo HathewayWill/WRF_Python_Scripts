@@ -346,7 +346,7 @@ def process_frame(args):
 
         # Valid time (prefer WRF metadata)
         valid_dt = get_valid_time(ncfile, ncfile_path, time_index)
-        print(f"Plotting: {valid_dt:%Y/%m/%d %H:%M:%S} UTC")
+        print(f"Plotting: {valid_dt:%H:%M:%SZ %Y-%m-%d}")
 
         ###########################################################################
         # Retrieve WRF variables (physics unchanged)

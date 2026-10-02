@@ -425,7 +425,7 @@ def process_frame(args):
         valid_dt = get_valid_time(nc, ncfile_path, time_index)
 
         # Progress log (requested format)
-        print(f"Plotting data: {valid_dt:%Y/%m/%d %H:%M:%S} UTC")
+        print(f"Plotting data: {valid_dt:%H:%M:%SZ %Y-%m-%d}")
 
         u = wrf.getvar(nc, "ua", timeidx=time_index)
         v = wrf.getvar(nc, "va", timeidx=time_index)
@@ -643,7 +643,7 @@ def process_frame(args):
         )
 
         plt.title(
-            f"Valid: {valid_dt:%H:%M:%S}Z {valid_dt:%Y-%m-%d}",
+            f"Valid: {valid_dt:%H:%M:%SZ %Y-%m-%d}",
             loc="right",
             fontsize=13,
         )

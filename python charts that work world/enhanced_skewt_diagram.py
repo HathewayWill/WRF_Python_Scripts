@@ -1735,7 +1735,7 @@ def process_frame(args):
         valid_dt = get_valid_time(wrf_handle, ncfile_path, time_index)
 
         if valid_dt is not None:
-            print(f"Plotting data: {valid_dt:%Y/%m/%d %H:%M:%S} UTC")
+            print(f"Plotting data: {valid_dt:%H:%M:%SZ %Y-%m-%d}")
         else:
             print(f"Plotting data: unknown time ({file_name}, t={time_index})")
 

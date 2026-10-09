@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-hurricane_tracker_independent_nests.py
+hurricane_tracker_units.py
 
 Unified WRF operational and data-agnostic storm tracking.
 Retains tropical_hurricane_track.py's map, intensity, CSV, ATCF-style file,
@@ -174,6 +174,28 @@ def wind_strength(wind_mph: float) -> tuple[str, str]:
 def strength_colors(wind_kt: np.ndarray) -> list[str]:
     """Color each center from its maximum model 10-m wind, not from SLP."""
     return [wind_strength(float(w) * MPH_PER_KNOT)[1] for w in wind_kt]
+
+
+def wind_band_unit_label(low_mph: float, high_mph: float) -> str:
+    """Show the *same* mph cutoffs in mph, m/s, and kt without changing bins.
+
+    The <upper notation denotes a strict open upper boundary. Decimal values
+    are display approximations; classification always uses original mph bounds.
+    """
+    def format_band(low: float, high: float, factor: float, precision: int, unit: str) -> str:
+        def fmt(value: float) -> str:
+            return f"{value * factor:.{precision}f}"
+        if not np.isfinite(low):
+            return f"<{fmt(high)} {unit}"
+        if not np.isfinite(high):
+            return f"≥{fmt(low)} {unit}"
+        return f"{fmt(low)}–<{fmt(high)} {unit}"
+
+    return "  |  ".join((
+        format_band(low_mph, high_mph, 1., 0, "mph"),
+        format_band(low_mph, high_mph, 1. / (KNOTS_PER_MPS * MPH_PER_KNOT), 1, "m/s"),
+        format_band(low_mph, high_mph, 1. / MPH_PER_KNOT, 1, "kt"),
+    ))
 
 
 ###############################################################################
@@ -1734,9 +1756,12 @@ def add_smoothed_intensity_columns(df: pd.DataFrame, window: int = 3) -> pd.Data
                            ("smoothed", "vmax10_kt_smoothed")):
         mph = pd.to_numeric(out[column], errors="coerce") * MPH_PER_KNOT
         out[f"vmax10_mph_{suffix}"] = mph
+        out[f"vmax10_mps_{suffix}"] = pd.to_numeric(out[column], errors="coerce") / KNOTS_PER_MPS
         out[f"wind_strength_{suffix}"] = [wind_strength(float(x))[0] for x in mph]
         out[f"wind_color_{suffix}"] = [wind_strength(float(x))[1] for x in mph]
 
+    # Explicit raw mph alias alongside the existing vmax10_mps and vmax10_kt.
+    out["vmax10_mph"] = out["vmax10_mph_raw"]
     return out
 
 
@@ -2168,11 +2193,13 @@ def plot_track_map(
         else:
             ax.plot(lons[i-1:i+1], lats[i-1:i+1], lw=2.35,
                     color=point_colors[i], zorder=5, solid_capstyle="round", **coords)
-    ax.scatter(lons, lats, c=point_colors, s=31, edgecolors="black",
-               linewidths=.55, zorder=7, **coords)
+    # Draw the larger review X UNDER the smaller category-color dots. Keeping
+    # the arms visible around the dot conveys uncertainty without masking wind.
     if suspect.any():
-        ax.scatter(lons[suspect], lats[suspect], marker="x", s=110,
-                   color="#4b4b4b", linewidths=1.8, zorder=10, **coords)
+        ax.scatter(lons[suspect], lats[suspect], marker="x", s=145,
+                   color="#4b4b4b", linewidths=1.65, zorder=6, **coords)
+    ax.scatter(lons, lats, c=point_colors, s=38, edgecolors="black",
+               linewidths=.55, zorder=7, **coords)
 
     if best_df is not None and not best_df.empty:
         blons = base_lon + st_wrap180(best_df.best_lon.to_numpy(float) - base_lon)
@@ -2233,32 +2260,41 @@ def plot_track_map(
     fig.text(.065, .042, valid_title_text(df), ha="left", va="bottom",
              fontsize=10, color="#333333")
 
-    # Category panel is aligned with the plot, rather than floating over it.
-    panel = fig.add_axes([.775, .22, .22, .60])
+    # Dedicated legend panel: model wind-speed bins in three unit systems.
+    panel = fig.add_axes([.76, .20, .235, .64])
     panel.set_axis_off()
     panel.text(.03, .98, "10 m MODEL WIND", transform=panel.transAxes,
                va="top", fontsize=12, weight="bold")
-    panel.text(.03, .92, "Category-color key (mph)", transform=panel.transAxes,
-               va="top", fontsize=10, color="#444444")
+    panel.text(.03, .92, "Category colors  |  mph, m/s, kt", transform=panel.transAxes,
+               va="top", fontsize=9.0, color="#444444")
+    from matplotlib.patches import Rectangle
     for i, (name, low, high, color) in enumerate(WIND_STRENGTHS):
-        suffix = "<39" if i == 0 else ("157+" if i == 6 else f"{int(low)}–{int(high)-1}")
-        y = .83 - i * .091
-        from matplotlib.patches import Rectangle
-        panel.add_patch(Rectangle((.025, y-.018), .075, .037, facecolor=color,
+        y = .842 - i * .090
+        panel.add_patch(Rectangle((.025, y-.026), .075, .045, facecolor=color,
                                   edgecolor="black", lw=.6, transform=panel.transAxes))
-        panel.text(.13, y, f"{name}  ({suffix})", va="center",
-                   fontsize=9.2, transform=panel.transAxes)
-    panel.plot([.025, .10], [.137, .137], transform=panel.transAxes,
+        panel.text(.13, y+.015, name, va="center", fontsize=9.0,
+                   weight="medium", transform=panel.transAxes)
+        panel.text(.13, y-.019, wind_band_unit_label(low, high), va="center",
+                   fontsize=6.8, color="#444444", transform=panel.transAxes)
+
+    # The example uses a colored point laid over a gray X, matching the map.
+    panel.scatter([.065], [.216], marker="x", s=130, c="#4b4b4b",
+                  linewidths=1.7, zorder=1, transform=panel.transAxes, clip_on=False)
+    panel.scatter([.065], [.216], s=50, c=["#00FFFF"], edgecolors="black",
+                  linewidths=.6, zorder=2, transform=panel.transAxes, clip_on=False)
+    panel.text(.13, .216, "Uncertain fix (X behind dot)", va="center",
+               fontsize=8.4, transform=panel.transAxes)
+    panel.plot([.025, .10], [.150, .150], transform=panel.transAxes,
                color="#666666", ls="--", lw=1.5)
-    panel.text(.13, .137, "Review center jump", va="center",
-               fontsize=9, transform=panel.transAxes)
-    panel.annotate("", xy=(.10, .072), xytext=(.025, .072), xycoords="axes fraction",
+    panel.text(.13, .150, "Review center jump", va="center",
+               fontsize=8.7, transform=panel.transAxes)
+    panel.annotate("", xy=(.10, .081), xytext=(.025, .081), xycoords="axes fraction",
                    arrowprops=dict(arrowstyle="-|>", lw=1.7,
                                    color=STORM_PALETTE["motion"]))
-    panel.text(.13, .072, "Motion heading", va="center",
-               fontsize=9, transform=panel.transAxes)
-    panel.text(.03, -.01, "Wind bins use model grid-point\n10 m winds, not NHC 1-minute\nsustained storm intensity.",
-               fontsize=8.3, color="#555555", va="top", transform=panel.transAxes)
+    panel.text(.13, .081, "Motion heading", va="center",
+               fontsize=8.7, transform=panel.transAxes)
+    panel.text(.03, -.015, "Model grid-point 10 m winds.\nNot official 1-minute sustained intensity.",
+               fontsize=8.1, color="#555555", va="top", transform=panel.transAxes)
     if suspect.any():
         fig.text(.78, .14, f"{int(np.count_nonzero(suspect))} suspect track legs\n"
                  f"(over {map_jump_speed_kt:g} kt or flagged)\nkept in CSV",
@@ -2301,6 +2337,12 @@ def plot_intensity(
     ax2.scatter(times, wind_values, c=wind_colors, marker="s", s=25,
                 edgecolors="black", linewidths=.4, zorder=4)
     ax2.set_ylabel("Maximum 10 m wind (kt)")
+    # Secondary metric scale uses the same data, not a second wind estimate.
+    metric_axis = ax2.secondary_yaxis("right", functions=(
+        lambda kt: np.asarray(kt) / KNOTS_PER_MPS,
+        lambda mps: np.asarray(mps) * KNOTS_PER_MPS,
+    ))
+    metric_axis.set_ylabel("Maximum 10 m wind (m/s)")
     ax2.set_xlabel("Valid time (UTC)")
     ax2.grid(True, alpha=.35)
     # Very faint category bands are confined to the visible data range, to

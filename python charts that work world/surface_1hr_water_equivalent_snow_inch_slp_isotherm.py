@@ -17,6 +17,11 @@ SNOWNC grid-scale accumulation) when available. Otherwise the script plots
 a clearly marked snowpack net change or snapshot, NOT an invented snowfall
 accumulation. A red map footer and colorbar identify the actual product.
 No wrf_accumulation_fix.py module is required.
+
+MOVING-NEST UPDATE: When prior and current WRF grids overlap, accumulated
+snowfall is geographically interpolated to the current grid; pixels without
+earlier coverage remain missing and are hatched. Interpolation is not
+conservative budget remapping. No companion helper module required.
 """
 
 ###############################################################################
@@ -102,89 +107,191 @@ def _snow_array(nc, variable_name, time_index):
     return arr
 
 
-def _same_snow_grid(current, current_idx, previous, previous_idx):
-    # Use the 2D moving-nest coordinates, not array indices or shapes alone.
-    for options, is_lon in ((('XLAT', 'XLAT_M'), False), (('XLONG', 'XLONG_M'), True)):
-        field = next((v for v in options if v in current.variables and v in previous.variables), None)
-        if field is None:
-            return False
-        a = _snow_array(current, field, current_idx)
-        b = _snow_array(previous, field, previous_idx)
-        if a.shape != b.shape or not np.all(np.isfinite(a)) or not np.all(np.isfinite(b)):
-            return False
-        delta = (a - b + 180.0) % 360.0 - 180.0 if is_lon else a - b
-        if np.max(np.abs(delta)) > 1.0e-5:
-            return False
-    return True
+def _snow_geo_coords(nc, time_index):
+    """Read actual WRF cell coordinates at this model time, including moving nests."""
+    lat_name = next((n for n in ('XLAT', 'XLAT_M') if n in nc.variables), None)
+    lon_name = next((n for n in ('XLONG', 'XLONG_M') if n in nc.variables), None)
+    if not lat_name or not lon_name:
+        raise ValueError('WRF XLAT/XLONG geographic coordinates are missing')
+    return (_snow_array(nc, lat_name, time_index),
+            _snow_array(nc, lon_name, time_index))
+
+
+def _snow_geo_remap(previous_values, previous_lat, previous_lon,
+                    current_lat, current_lon):
+    """Interpolate previous field to current WRF geographic locations.
+
+    Fast path for stationary grids. For shifted meshes, piecewise-linear
+    triangulation (no extrapolation) yields NaN outside previous geographic
+    coverage. Longitude wrapping handles the date line.
+
+    This is an APPROXIMATE geographic interpolation, not mass-conservative
+    remapping or a reconstruction of snow budget history on moving WRF cells.
+    """
+    old = np.ma.filled(np.ma.asarray(previous_values, dtype=float), np.nan)
+    olat = np.ma.filled(np.ma.asarray(previous_lat, dtype=float), np.nan)
+    olon = np.ma.filled(np.ma.asarray(previous_lon, dtype=float), np.nan)
+    nlat = np.ma.filled(np.ma.asarray(current_lat, dtype=float), np.nan)
+    nlon = np.ma.filled(np.ma.asarray(current_lon, dtype=float), np.nan)
+    if olat.shape != old.shape or olon.shape != old.shape or nlat.shape != nlon.shape:
+        raise ValueError('Snow field and WRF latitude/longitude shapes do not match')
+    if (olat.shape == nlat.shape and
+        np.allclose(olat, nlat, atol=1.e-5, rtol=0, equal_nan=False) and
+        np.allclose((olon - nlon + 180) % 360 - 180, 0,
+                    atol=1.e-5, rtol=0, equal_nan=False)):
+        return old.copy(), False
+
+    from scipy.interpolate import LinearNDInterpolator
+    from scipy.spatial import QhullError
+    finite = np.isfinite(nlat) & np.isfinite(nlon)
+    if not finite.any():
+        raise ValueError('Current nest lacks valid geographic coordinates')
+    clat = float(np.nanmedian(nlat[finite]))
+    lon_rad = np.deg2rad(nlon[finite])
+    ref_lon = float(np.rad2deg(np.arctan2(np.mean(np.sin(lon_rad)),
+                                          np.mean(np.cos(lon_rad)))))
+    xscale = max(float(np.cos(np.deg2rad(clat))), 0.05)
+
+    def locations(lat, lon):
+        x = ((lon - ref_lon + 180) % 360 - 180) * xscale
+        return np.column_stack((x.ravel(), lat.ravel()))
+
+    src = locations(olat, olon)
+    dst = locations(nlat, nlon)
+    valid_src = np.all(np.isfinite(src), axis=1) & np.isfinite(old.ravel())
+    valid_dst = np.all(np.isfinite(dst), axis=1)
+    if np.count_nonzero(valid_src) < 3:
+        raise ValueError('Too few valid snow locations in previous nest')
+
+    # Restrict Delaunay triangulation near the target domain when possible.
+    low, high = np.min(dst[valid_dst], axis=0), np.max(dst[valid_dst], axis=0)
+    span = np.maximum(high - low, 1.e-4)
+    margin = np.maximum(0.08 * span, 0.002)
+    near = valid_src & np.all((src >= low-margin) & (src <= high+margin), axis=1)
+    if np.count_nonzero(near) >= 4:
+        valid_src = near
+    try:
+        interpolator = LinearNDInterpolator(
+            src[valid_src], old.ravel()[valid_src], fill_value=np.nan)
+        remapped = np.full(len(dst), np.nan)
+        remapped[valid_dst] = interpolator(dst[valid_dst])
+        remapped = remapped.reshape(nlat.shape)
+    except (QhullError, ValueError) as exc:
+        raise ValueError(f'Snow moving-grid interpolation failed: {exc}') from exc
+    return remapped, True
+
+
+def _snow_missing_hatching(ax, lons, lats, plotted):
+    """Hatch cells without prior geographic overlap or with invalid differences."""
+    field = np.ma.filled(np.ma.asarray(plotted, dtype=float), np.nan)
+    missing = ~np.isfinite(field)
+    if np.any(missing) and not np.all(missing):
+        ax.contourf(lons, lats, missing.astype(float), levels=(0.5, 1.5),
+                    colors='none', hatches=['////'],
+                    transform=crs.PlateCarree(), zorder=8)
 
 
 def snow_diagnostic(current, current_idx, previous, previous_idx,
                     kind, scale=1.0, label='snow'):
-    """Return (array, truthful_description), never silently skip a plot.
+    """Return (geographic snow field, scientifically explicit description).
 
-    Accumulations only use genuinely cumulative fields at geographically
-    matching coordinates. SNOW and SNOWH differences are *net snowpack change*,
-    not accumulated snowfall. When frames differ geographically (moving nest),
-    the program plots a current snowpack snapshot instead of subtracting cells.
-    All snow-depth estimates based on ACSNOW/SNOWNC use an assumed 10:1 ratio.
+    The previous accumulated field is compared at the CURRENT geographic
+    locations. Outside previous nest coverage, values remain missing (NaN).
+    Accumulator resets are masked, while negative snowpack net changes are
+    retained as valid net changes. Missing inputs yield labeled snapshots.
     """
     depth = kind == 'snow_depth'
     if kind not in ('snow_depth', 'snow_swe'):
         raise ValueError(f'Unknown snow product kind: {kind}')
-    unit = 'in' if abs(scale - .3937007874015748) < 1e-6 or abs(scale - .03937007874015748) < 1e-6 else 'mm'
-    descriptor = 'estimated snow depth (10:1)' if depth else 'snowfall water equivalent'
+    unit = ('in' if (abs(scale-0.3937007874015748) < 1.e-6 or
+                     abs(scale-0.03937007874015748) < 1.e-6) else 'mm')
+    descriptor = ('estimated snowfall depth (assumed 10:1)' if depth else
+                  'snowfall water equivalent')
     same_frame = (current_idx == previous_idx and
-                  getattr(current, 'filepath', lambda: None)() == getattr(previous, 'filepath', lambda: None)())
-    try:
-        aligned = not same_frame and _same_snow_grid(current, current_idx, previous, previous_idx)
-    except (KeyError, ValueError, IndexError):
-        aligned = False
-    if aligned:
-        for field, qualifier in (('ACSNOW','accumulated snowfall'), ('SNOWNC','grid-scale accumulated snowfall')):
-            new = _snow_array(current,field,current_idx)
-            old = _snow_array(previous,field,previous_idx)
-            if new is None or old is None or new.shape != old.shape:
-                continue
-            change = new - old
-            if np.isfinite(change).all() and np.nanmin(change) >= -0.001:
-                change = np.maximum(change, 0.0)
-                description = f'{qualifier}: {descriptor} ({unit})'
-                print(f'INFO {label}: {description}',flush=True)
-                return change*scale, description
-            print(f'WARNING {label}: {field} accumulator reset/invalid; searching fallback',flush=True)
-        fallback_field = 'SNOWH' if depth else 'SNOW'
-        new=_snow_array(current,fallback_field,current_idx)
-        old=_snow_array(previous,fallback_field,previous_idx)
-        if new is not None and old is not None and new.shape==old.shape:
-            factor = (1000.0 if unit=='mm' else 39.37007874015748) if depth else scale
-            description = ('NET snowpack-depth change (not accumulated snowfall)' if depth else
-                           'NET snowpack-SWE change (not accumulated snowfall)')+f' ({unit})'
-            print(f'WARNING {label}: using {fallback_field}: {description}',flush=True)
-            return (new-old)*factor, description
-    elif not same_frame:
-        print(f'WARNING {label}: moving/repositioned nest or missing coordinates: using current-field snapshot, not grid-index subtraction', flush=True)
+                  getattr(current, 'filepath', lambda: None)() ==
+                  getattr(previous, 'filepath', lambda: None)())
+    aligned = False
+    moved = False
+    clat = clon = plat = plon = None
+    if not same_frame:
+        try:
+            clat, clon = _snow_geo_coords(current, current_idx)
+            plat, plon = _snow_geo_coords(previous, previous_idx)
+            aligned = True
+        except (ValueError, KeyError, IndexError) as exc:
+            print(f'WARNING {label}: cannot compare nest geography: {exc}', flush=True)
 
-    # No valid accumulation: always show the existing current snow state.
-    # This is deliberately a *different* diagnostic, labeled on the figure.
+    if aligned:
+        for name, qualifier in (('ACSNOW', 'model accumulated snowfall'),
+                                ('SNOWNC', 'grid-scale accumulated snowfall')):
+            new = _snow_array(current, name, current_idx)
+            old = _snow_array(previous, name, previous_idx)
+            if new is None or old is None:
+                continue
+            if new.shape != clat.shape or old.shape != plat.shape:
+                print(f'WARNING {label}: {name} grid shape mismatch', flush=True)
+                continue
+            try:
+                prior, moved = _snow_geo_remap(old, plat, plon, clat, clon)
+            except (ValueError, IndexError) as exc:
+                print(f'WARNING {label}: cannot align {name}: {exc}', flush=True)
+                continue
+            change = new - prior
+            invalid = np.isfinite(change) & (change < -0.02)
+            change[invalid] = np.nan
+            tiny = np.isfinite(change) & (change < 0.0)
+            change[tiny] = 0.0
+            coverage = 100.0 * np.count_nonzero(np.isfinite(change)) / change.size
+            if coverage < 1.0:
+                print(f'WARNING {label}: {name} lacks reliable previous coverage', flush=True)
+                continue
+            description = f'{qualifier}: {descriptor} ({unit})'
+            if moved:
+                description += f'; moving-grid INTERPOLATED, {coverage:.1f}% overlap (approx.)'
+            if np.any(invalid):
+                description += f'; {np.count_nonzero(invalid)} reset cells masked'
+            print(f'INFO {label}: {description}', flush=True)
+            return change * scale, description
+
+        fallback = 'SNOWH' if depth else 'SNOW'
+        new = _snow_array(current, fallback, current_idx)
+        old = _snow_array(previous, fallback, previous_idx)
+        if new is not None and old is not None and new.shape == clat.shape and old.shape == plat.shape:
+            try:
+                prior, moved = _snow_geo_remap(old, plat, plon, clat, clon)
+                change = new - prior
+                coverage = 100.0 * np.count_nonzero(np.isfinite(change)) / change.size
+                if coverage >= 1.0:
+                    factor = ((1000.0 if unit == 'mm' else 39.37007874015748)
+                              if depth else scale)
+                    description = ('NET snowpack-depth change (NOT snowfall)' if depth else
+                                   'NET snowpack-SWE change (NOT snowfall)') + f' ({unit})'
+                    if moved:
+                        description += f'; moving-grid INTERPOLATED, {coverage:.1f}% overlap (approx.)'
+                    print(f'WARNING {label}: {description}', flush=True)
+                    return change * factor, description
+            except (ValueError, IndexError) as exc:
+                print(f'WARNING {label}: no net snowpack change: {exc}', flush=True)
+
+    # No usable baseline: plot a truthful instantaneous/since-init diagnostic.
     if depth:
-        for name,factor,description in (
-            ('SNOWH', (1000.0 if unit=='mm' else 39.37007874015748), f'SNAPSHOT snowpack depth ({unit}); NOT interval snowfall'),
-            ('SNOW',scale, f'SNAPSHOT 10:1 estimated snowpack depth ({unit}); NOT interval snowfall')):
-            arr=_snow_array(current,name,current_idx)
-            if arr is not None:
-                print(f'WARNING {label}: {description}',flush=True)
-                return arr*factor,description
+        candidates = (
+            ('SNOWH', (1000.0 if unit == 'mm' else 39.37007874015748),
+             f'SNAPSHOT snowpack depth ({unit}); NOT interval snowfall'),
+            ('SNOW', scale, f'SNAPSHOT 10:1 estimated snowpack depth ({unit}); NOT interval snowfall'))
     else:
-        for name, factor,description in (
-            ('SNOW',scale,f'SNAPSHOT snowpack SWE ({unit}); NOT interval snowfall'),
-            ('ACSNOW',scale,f'SINCE-INITIALIZATION ACSNOW ({unit}); NOT requested interval'),
-            ('SNOWNC',scale,f'SINCE-INITIALIZATION SNOWNC ({unit}); NOT requested interval'),
-            ('SNOWH',scale*100,f'SNAPSHOT snowpack SWE ({unit}) estimated 10:1 from SNOWH; NOT interval snowfall')):
-            arr=_snow_array(current,name,current_idx)
-            if arr is not None:
-                print(f'WARNING {label}: {description}',flush=True)
-                return arr*factor,description
-    raise RuntimeError(f'{label}: no ACSNOW, SNOWNC, SNOW, or SNOWH available for snow plotting; check WRF history variables')
+        candidates = (
+            ('SNOW', scale, f'SNAPSHOT snowpack SWE ({unit}); NOT interval snowfall'),
+            ('ACSNOW', scale, f'SINCE-INITIALIZATION ACSNOW ({unit}); NOT requested interval'),
+            ('SNOWNC', scale, f'SINCE-INITIALIZATION SNOWNC ({unit}); NOT requested interval'),
+            ('SNOWH', scale * 100,
+             f'SNAPSHOT snowpack SWE ({unit}) estimated 10:1 from SNOWH; NOT interval snowfall'))
+    for name, factor, description in candidates:
+        values = _snow_array(current, name, current_idx)
+        if values is not None:
+            print(f'WARNING {label}: {description}', flush=True)
+            return values * factor, description
+    raise RuntimeError(f'{label}: no snow fields ACSNOW, SNOWNC, SNOW or SNOWH found')
 
 warnings.filterwarnings("default")
 
@@ -762,6 +869,8 @@ def process_frame(args):
         image_folder = os.path.join(path_figures, "Images")
         # The colorbar must also reflect snapshot/net-change fallback semantics.
         cbar.set_label(_snow_description, fontsize=12)
+        # Hatch missing prior-grid coverage or invalid counters; keep original map.
+        _snow_missing_hatching(ax, lons_np, lats_np, one_hour_snow_np)
         # Label the measured/estimated quantity, especially snapshot fallbacks.
         fig.text(0.5, 0.012, _snow_description, ha="center", va="bottom",
                  fontsize=11, fontweight="bold", color="darkred",

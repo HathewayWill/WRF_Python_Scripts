@@ -18,9 +18,9 @@ conda activate wrf-python || { echo "Failed to activate conda environment."; exi
 
 # Define locations (each value is "lat,lon")
 declare -A locations=(
-  ["Austin, TX"]="30.2672,-97.7431"            # Capital of Texas
-  ["San Antonio, TX"]="29.4241,-98.4936"       # Major city known for the Alamo
-  ["Fredericksburg, TX"]="30.2752,-98.8719"    # Known for wineries and German heritage
+    ["Billings, MT"]="45.7833,-108.5007"    # Largest city in Montana
+    ["Missoula, MT"]="46.8721,-113.9940"   # Major city in western Montana
+    ["Great Falls, MT"]="47.5053,-111.3008" # Major city in north-central Montana
 )
 ###############################################################################
 # WRF-native trajectory settings
@@ -377,6 +377,7 @@ d02_scripts=(
 
   "surface_windchill_degf_slp_wind_speed_dir.py"
   "surface_visibility_miles.py"
+  "Road_Icing_Index_multicore_Publication_version.py"
 
 )
 run_scripts_in_parallel "d02" "${d02_scripts[@]}"

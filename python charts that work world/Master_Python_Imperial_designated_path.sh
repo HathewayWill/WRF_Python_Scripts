@@ -15,7 +15,7 @@
 # Optional strict mode from original snippet (left commented to preserve behavior)
 # set -euo pipefail
 
-# --------------------------
+# -------------------------- 
 # Args & helpers
 # --------------------------
 WRF_OUTPUT_DIR=""
@@ -459,6 +459,7 @@ d02_scripts=(
 
   "surface_windchill_degf_slp_wind_speed_dir.py"
   "surface_visibility_miles.py"
+  "Road_Icing_Index_multicore_Publication_version.py"
 
 )
 

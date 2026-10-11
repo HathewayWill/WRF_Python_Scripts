@@ -461,6 +461,7 @@ d02_scripts=(
 
   "surface_windchill_degc_slp_wind_speed_dir.py"
   "surface_visibility_km.py"
+  "Road_Icing_Index_multicore_Publication_version.py"
 
 )
 

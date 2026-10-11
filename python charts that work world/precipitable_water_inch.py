@@ -109,6 +109,20 @@ def get_valid_time(ncfile: Dataset, ncfile_path: str, time_index: int) -> dateti
     except Exception:
         pass
 
+    # A multi-time wrfout must use its Times[time_index] record. A filename
+    # is only the FIRST valid time in many WRF history layouts.
+    try:
+        if "Times" in ncfile.variables:
+            raw = ncfile.variables["Times"][time_index]
+            stamp = b"".join(
+                x if isinstance(x, bytes) else str(x).encode("ascii")
+                for x in raw
+            ).decode("ascii").strip("\x00 ")
+            return datetime.strptime(stamp.replace("T", "_"), "%Y-%m-%d_%H:%M:%S")
+    except (TypeError, ValueError, IndexError, KeyError, AttributeError):
+        pass
+    # Explicitly warn when only the file-name time can be recovered.
+    print(f"WARNING: using filename timestamp for {ncfile_path}, frame {time_index}")
     return parse_valid_time_from_wrf_name(ncfile_path)
 
 

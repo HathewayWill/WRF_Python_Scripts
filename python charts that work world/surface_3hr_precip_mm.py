@@ -47,6 +47,208 @@ from wrf import ALL_TIMES, to_np
 warnings.filterwarnings("ignore")
 
 ###############################################################################
+# STANDALONE WRF PRECIPITATION / MOVING-NEST CALCULATIONS
+# This block is intentionally embedded in every precipitation chart. No custom
+# imports or helper files are needed. SciPy is already used for smoothing.
+###############################################################################
+
+def _precip_datetime(value):
+    """Normalize WRF valid time; UTC-naive, suitable for matching model UTC."""
+    from datetime import timezone
+    if hasattr(value, 'to_pydatetime'):
+        value = value.to_pydatetime()
+    if isinstance(value, np.datetime64):
+        value = datetime.fromisoformat(np.datetime_as_string(value, unit='us'))
+    if not isinstance(value, datetime):
+        raise TypeError(f'Invalid model timestamp: {value!r}')
+    if value.tzinfo is not None:
+        value = value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value
+
+
+def precip_time_pairs(dated_frames, hours):
+    """Return every frame with its exact UTC predecessor, if one exists.
+
+    No 1/3/24-hour accumulation is invented from a nearby frame. When an
+    interval is unavailable the chart instead plots an explicitly labeled
+    WRF cumulative-counter snapshot. WRF restarts with duplicate times are
+    reported and the last chronologically discovered frame is retained.
+    """
+    from datetime import timedelta
+    records = {}
+    for path, index, valid in dated_frames:
+        dt = _precip_datetime(valid)
+        if dt in records:
+            print(f'WARNING: duplicate UTC time {dt}: using {path}, frame {index}')
+        records[dt] = (path, index)
+    results = []
+    for dt in sorted(records):
+        path, index = records[dt]
+        earlier = records.get(dt - timedelta(hours=hours), (None, None))
+        results.append((path, index, earlier[0], earlier[1]))
+    return results
+
+
+def _precip_2d(nc, name, time_index, optional=False):
+    if name not in nc.variables:
+        if optional:
+            return None
+        raise KeyError(f'WRF field {name} is required for precipitation')
+    v = nc.variables[name]
+    raw = v[time_index, ...] if getattr(v, 'dimensions', ()) and v.dimensions[0] == 'Time' else v[...]
+    data = np.ma.filled(np.ma.asarray(raw, dtype=float), np.nan)
+    data = np.asarray(data, dtype=float).squeeze()
+    if data.ndim != 2:
+        raise ValueError(f'{name} should be 2D at one time; got {data.shape}')
+    return data
+
+
+def _precip_total(nc, time_index):
+    """WRF cumulative precipitation (mm): RAINC + RAINNC + optional RAINSH."""
+    components = []
+    for name in ('RAINC', 'RAINNC', 'RAINSH'):
+        data = _precip_2d(nc, name, time_index, optional=True)
+        if data is not None:
+            components.append(data)
+    if not components or not any(n in nc.variables for n in ('RAINC', 'RAINNC')):
+        raise KeyError('Neither RAINC nor RAINNC exists in WRF output')
+    result = np.zeros_like(components[0], dtype=float)
+    for component in components:
+        if component.shape != result.shape:
+            raise ValueError('WRF cumulative rain component shapes disagree')
+        result += component
+    return result
+
+
+def _precip_coordinates(nc, time_index):
+    latname = 'XLAT' if 'XLAT' in nc.variables else 'XLAT_M'
+    lonname = 'XLONG' if 'XLONG' in nc.variables else 'XLONG_M'
+    return (_precip_2d(nc, latname, time_index),
+            _precip_2d(nc, lonname, time_index))
+
+
+def _precip_remap_previous(previous_rain, previous_lat, previous_lon,
+                           current_lat, current_lon):
+    """Interpolate old cumulative precipitation onto CURRENT geographic grid.
+
+    Linear triangles do not extrapolate outside the previous nest. Missing
+    geographic overlap remains NaN. Longitude wrapping supports the dateline.
+    This is a spatial estimate, NOT conservation of a moving-domain budget.
+    """
+    if (previous_rain.shape == current_lat.shape == previous_lat.shape and
+        np.allclose(previous_lat, current_lat, atol=1.e-5, rtol=0) and
+        np.allclose((previous_lon - current_lon + 180) % 360 - 180, 0,
+                    atol=1.e-5, rtol=0)):
+        return previous_rain, False
+
+    from scipy.interpolate import LinearNDInterpolator
+    from scipy.spatial import QhullError
+    center_lat = float(np.nanmedian(current_lat))
+    angles = np.deg2rad(current_lon[np.isfinite(current_lon)])
+    ref_lon = float(np.rad2deg(np.arctan2(np.mean(np.sin(angles)),
+                                          np.mean(np.cos(angles)))))
+    xscale = max(float(np.cos(np.deg2rad(center_lat))), 0.05)
+
+    def position(lat, lon):
+        x = ((lon - ref_lon + 180.0) % 360.0 - 180.0) * xscale
+        return np.column_stack((x.ravel(), np.asarray(lat).ravel()))
+
+    source = position(previous_lat, previous_lon)
+    target = position(current_lat, current_lon)
+    values = previous_rain.ravel()
+    good = np.isfinite(values) & np.all(np.isfinite(source), axis=1)
+    if np.count_nonzero(good) < 3:
+        raise ValueError('Too few previous-grid precipitation locations for interpolation')
+
+    # Limit the triangulation to the previous grid cells around the new grid
+    # to reduce work on large, shifted high-resolution WRF nests.
+    valid_target = np.all(np.isfinite(target), axis=1)
+    if not np.any(valid_target):
+        raise ValueError('Current WRF coordinates contain no finite locations')
+    low = target[valid_target].min(axis=0)
+    high = target[valid_target].max(axis=0)
+    span = np.maximum(high - low, 1.e-4)
+    margin = np.maximum(0.08 * span, 0.002)
+    near = good & np.all((source >= low - margin) &
+                         (source <= high + margin), axis=1)
+    if np.count_nonzero(near) >= 4:
+        good = near
+
+    try:
+        interp = LinearNDInterpolator(source[good], values[good], fill_value=np.nan)
+        aligned = np.asarray(interp(target), dtype=float).reshape(current_lat.shape)
+    except (QhullError, ValueError) as exc:
+        raise ValueError(f'Moving-grid interpolation failed: {exc}') from exc
+    return aligned, True
+
+
+def calculate_precip_chart(nc_current, time_index, prior_path, prior_index,
+                           period_label, conversion=1.0):
+    """Return (plot field, diagnostic, overlap percent); all outputs 2D.
+
+    On a missing baseline or incompatible moving grid, plot the CURRENT
+    WRF cumulative field, prominently identified as not the requested period.
+    On partial spatial overlap, plot only valid geographic locations, not a
+    false accumulation on newly entered areas of the moving nest.
+    """
+    current = _precip_total(nc_current, time_index)
+    snapshot_note = ('WRF cumulative rainfall counter — NOT ' + period_label +
+                     ' accumulation; baseline unavailable')
+    if prior_path is None or prior_index is None:
+        print('NOTICE:', snapshot_note)
+        return current * conversion, snapshot_note, 100.0
+
+    try:
+        with Dataset(prior_path) as nc_previous:
+            older = _precip_total(nc_previous, prior_index)
+            clat, clon = _precip_coordinates(nc_current, time_index)
+            plat, plon = _precip_coordinates(nc_previous, prior_index)
+            if clat.shape != current.shape or plat.shape != older.shape:
+                raise ValueError('WRF rain and geographic-coordinate shapes differ')
+            old_on_new, moved = _precip_remap_previous(
+                older, plat, plon, clat, clon)
+
+        difference = current - old_on_new
+        # A positive 0.02-mm tolerance permits tiny interpolation noise;
+        # strongly negative values imply a reset or noncomparable history.
+        invalid = np.isfinite(difference) & (difference < -0.02)
+        difference[invalid] = np.nan
+        tiny_negative = np.isfinite(difference) & (difference < 0)
+        difference[tiny_negative] = 0.0
+        available = np.isfinite(difference)
+        fraction = 100.0 * np.count_nonzero(available) / available.size
+        if fraction < 1.0:
+            raise ValueError('No reliable overlap or precipitation accumulator reset')
+        message = period_label + ' precipitation accumulation'
+        if moved:
+            message += f' | moving nest: {fraction:.1f}% valid geographic overlap'
+        if np.any(invalid):
+            message += f' | {np.count_nonzero(invalid)} reset/inconsistent cells masked'
+        if fraction < 99.95:
+            print('NOTICE:', message, '(NaN outside valid overlap)')
+        return difference * conversion, message, fraction
+    except (ValueError, KeyError, IndexError) as exc:
+        note = ('WRF cumulative rainfall counter — NOT ' + period_label +
+                f' accumulation; previous-grid comparison unavailable: {exc}')
+        print('WARNING:', note)
+        return current * conversion, note, 100.0
+
+
+def mark_precip_diagnostics(ax, lons, lats, plotted, note):
+    """Visible note and diagonal hatching for missing moving-nest coverage."""
+    missing = ~np.isfinite(np.asarray(plotted, dtype=float))
+    if np.any(missing) and not np.all(missing):
+        ax.contourf(lons, lats, missing.astype(float), levels=(0.5, 1.5),
+                    colors='none', hatches=['////'], transform=crs.PlateCarree(),
+                    zorder=8)
+    ax.text(0.015, 0.025, note[:180], transform=ax.transAxes,
+            ha='left', va='bottom', fontsize=8, zorder=30,
+            bbox=dict(facecolor='white', alpha=0.88, edgecolor='gray',
+                      boxstyle='round,pad=0.25'))
+
+
+
+###############################################################################
 # Canonical helper function block (v9 – contiguous, order-locked)
 ###############################################################################
 
@@ -111,6 +313,20 @@ def get_valid_time(ncfile: Dataset, ncfile_path: str, time_index: int) -> dateti
     except Exception:
         pass
 
+    # A multi-time wrfout must use its Times[time_index] record. A filename
+    # is only the FIRST valid time in many WRF history layouts.
+    try:
+        if "Times" in ncfile.variables:
+            raw = ncfile.variables["Times"][time_index]
+            stamp = b"".join(
+                x if isinstance(x, bytes) else str(x).encode("ascii")
+                for x in raw
+            ).decode("ascii").strip("\x00 ")
+            return datetime.strptime(stamp.replace("T", "_"), "%Y-%m-%d_%H:%M:%S")
+    except (TypeError, ValueError, IndexError, KeyError, AttributeError):
+        pass
+    # Explicitly warn when only the file-name time can be recovered.
+    print(f"WARNING: using filename timestamp for {ncfile_path}, frame {time_index}")
     return parse_valid_time_from_wrf_name(ncfile_path)
 
 
@@ -332,7 +548,7 @@ def process_frame(args):
     Physics / diagnostics are unchanged from the original script:
         * SLP from wrf.getvar(ncfile, "slp").
         * 3-hour accumulation = current cumulative precip - cumulative from
-          the frame 2 steps back (same 3-sample window logic).
+          the actual UTC start time.
         * temp, temp2, temp_850 via wrf.getvar + wrf.vinterp (unchanged).
         * SLP smoothing (sigma=5) and temp smoothing (sigma=1).
         * SLP contour range and intervals identical.
@@ -362,47 +578,23 @@ def process_frame(args):
         slp = wrf.getvar(ncfile, "slp", timeidx=time_index)
 
         # Cumulative precipitation (mm)
-        rainc = wrf.getvar(ncfile, "RAINC", timeidx=time_index)
-        rainnc = wrf.getvar(ncfile, "RAINNC", timeidx=time_index)
-        rainsh = wrf.getvar(ncfile, "RAINSH", timeidx=time_index)
-        total_rain = rainc + rainnc + rainsh  # mm
+        # Exact 3-hour UTC accumulation, source: RAINC+RAINNC(+RAINSH).
+        three_hour_rain, _precip_note, _overlap_percent = calculate_precip_chart(
+            ncfile, time_index, prev2_ncfile_path, prev2_time_index,
+            '3-hour', conversion=1.0)
+        earliest_dt = valid_dt - timedelta(hours=3)
+        latest_dt = valid_dt
 
-        # 3-hour accumulated precip using the frame 2 steps back (3-sample window)
-        if prev2_ncfile_path is not None and prev2_time_index is not None:
-            with Dataset(prev2_ncfile_path) as prev2_ncfile:
-                prev2_rainc = wrf.getvar(
-                    prev2_ncfile, "RAINC", timeidx=prev2_time_index
-                )
-                prev2_rainnc = wrf.getvar(
-                    prev2_ncfile, "RAINNC", timeidx=prev2_time_index
-                )
-                prev2_rainsh = wrf.getvar(
-                    prev2_ncfile, "RAINSH", timeidx=prev2_time_index
-                )
-                prev2_total_rain = prev2_rainc + prev2_rainnc + prev2_rainsh
 
-            three_hour_rain = total_rain - prev2_total_rain
-        else:
-            three_hour_rain = np.zeros_like(to_np(total_rain))
 
         # Surface temperature at this time (for smoothing / diagnostics)
         temp = wrf.getvar(ncfile, "T2", timeidx=time_index)
 
         # --- RESTORED ORIGINAL INTERPOLATION PATTERN (physics invariant) ---------
-        # Get full time series of 3D temperature and vertically interpolate
-        temp2 = wrf.getvar(ncfile, "temp", units="degC", timeidx=time_index)
+        # The 3D/850-hPa temperature field was never drawn: skip interpolation
+        # Unused 850-hPa temperature diagnostic removed: it did not appear
+        # on this precipitation map and could abort PNG generation.
 
-        temp_850 = wrf.vinterp(
-            ncfile,
-            temp2,
-            "pressure",
-            [850],
-            field_type="tc",
-            extrapolate=True,
-            squeeze=True,
-            meta=True,
-            timeidx=time_index,
-        ).squeeze()
         # ----------------------------------------------------------------------
         # Coordinates, grid spacing, and extent (moving-nest safe)
         # -------------------------------------------------------------------------
@@ -423,7 +615,6 @@ def process_frame(args):
         # -------------------------------------------------------------------------
         slp_np = to_np(slp)
         temp_np = to_np(temp)
-        temp_850_np = to_np(temp_850)
         three_hour_rain_np = to_np(three_hour_rain)
 
         (
@@ -432,14 +623,12 @@ def process_frame(args):
             slp_np,
             three_hour_rain_np,
             temp_np,
-            temp_850_np,
         ) = handle_domain_continuity_and_polar_mask(
             lats_np,
             lons_np,
             slp_np,
             three_hour_rain_np,
             temp_np,
-            temp_850_np,
         )
 
         # -------------------------------------------------------------------------
@@ -476,7 +665,6 @@ def process_frame(args):
         # -------------------------------------------------------------------------
         smooth_slp = gaussian_filter(slp_np, sigma=5.0)
         smooth_temp = gaussian_filter(temp_np, sigma=1.0)
-        smooth_temp_850 = gaussian_filter(temp_850_np, sigma=1.0)
 
         # -------------------------------------------------------------------------
         # SLP contours (physics: same interval logic & range)
@@ -632,6 +820,10 @@ def process_frame(args):
         # -------------------------------------------------------------------------
         # Titles
         # -------------------------------------------------------------------------
+        # Label snapshot products clearly and hatch regions where the prior
+        # moving nest did not cover the current grid.
+        mark_precip_diagnostics(ax, lons_np, lats_np, three_hour_rain_np, _precip_note)
+
         plt.title(
             f"Weather Research and Forecasting Model\n"
             f"Average Grid Spacing:{avg_dx_km}x{avg_dy_km}km\n"
@@ -727,27 +919,19 @@ if __name__ == "__main__":
         sys.exit(0)
 
     # For each frame index, identify the frame "2 steps back"
-    args_list = []
-    for idx, (ncfile_path, time_index) in enumerate(frames):
-        if idx >= 2:
-            prev2_ncfile_path, prev2_time_index = frames[idx - 2]
-        else:
-            prev2_ncfile_path, prev2_time_index = (None, None)
+    # Match elapsed UTC time, never frame count.
+    dated_frames = []
+    for _path, _idx in frames:
+        with Dataset(_path) as _nc:
+            dated_frames.append((_path, _idx, get_valid_time(_nc, _path, _idx)))
+    args_list = [
+        (p, k, pp, pk, domain, path_figures)
+        for p, k, pp, pk in precip_time_pairs(dated_frames, hours=3)
+    ]
+    if not args_list:
+        print("No complete 3-hour accumulation windows; no graphics produced.")
+        sys.exit(0)
 
-        args_list.append(
-            (
-                ncfile_path,
-                time_index,
-                prev2_ncfile_path,
-                prev2_time_index,
-                domain,
-                path_figures,
-            )
-        )
-
-    # -------------------------------------------------------------------------
-    # Process frames in parallel using ProcessPoolExecutor
-    # -------------------------------------------------------------------------
     max_workers = min(4, len(args_list)) if args_list else 1
 
     with ProcessPoolExecutor(max_workers=max_workers) as executor:

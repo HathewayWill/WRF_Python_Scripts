@@ -9,6 +9,12 @@ Computes (physics / diagnostics unchanged):
 
 Plots:
     * Total accumulated snow (inches) on a Cartopy map.
+
+STANDALONE REPAIR NOTE: Snowfall water equivalent uses ACSNOW (or labeled
+SNOWNC grid-scale accumulation) when available. Otherwise the script plots
+a clearly marked snowpack net change or snapshot, NOT an invented snowfall
+accumulation. A red map footer and colorbar identify the actual product.
+No wrf_accumulation_fix.py module is required.
 """
 
 ###############################################################################
@@ -38,7 +44,146 @@ from wrf import ALL_TIMES, to_np
 ###############################################################################
 # Warning suppression
 ###############################################################################
-warnings.filterwarnings("ignore")
+
+###############################################################################
+# Standalone WRF snow calculation and time pairing (no separate Python module)
+#
+# Source distinction:
+#   ACSNOW: model accumulated snowfall water equivalent (kg m-2 = mm H2O)
+#   SNOWNC: accumulated grid-scale snow (not necessarily total snowfall)
+#   SNOW:   instantaneous snowpack water equivalent (kg m-2)
+#   SNOWH:  instantaneous snowpack depth (m)
+# In the absence of a valid complete accumulation, a snapshot is plotted
+# with an explicit description. Never label a snapshot as an accumulation.
+###############################################################################
+
+def plot_time_pairs(dated_frames, hours):
+    """Every frame is drawable. Use exact UTC endpoints when available.
+
+    A missing earlier endpoint causes a labeled *snapshot* rather than an
+    invented hour/day accumulation or a silently missing PNG. A self-pair
+    signals that snapshot mode to snow_diagnostic().
+    """
+    from datetime import timedelta, timezone
+    if hours <= 0:
+        raise ValueError("hours must be positive")
+    times = {}
+    for path, index, valid in dated_frames:
+        if isinstance(valid, np.datetime64):
+            valid = datetime.fromisoformat(np.datetime_as_string(valid, unit="us"))
+        if valid.tzinfo is not None:
+            valid = valid.astimezone(timezone.utc).replace(tzinfo=None)
+        if valid in times:
+            print(f"WARNING: duplicate WRF time {valid}; using most recently listed frame", flush=True)
+        times[valid] = (path, index)
+    result = []
+    for valid in sorted(times):
+        current = times[valid]
+        old = times.get(valid - timedelta(hours=hours))
+        if old is None:
+            print(f"INFO: no exact {hours}-hour predecessor for {valid}; plotting snow snapshot", flush=True)
+            old = current
+        result.append((*current, *old))
+    return result
+
+
+def _snow_array(nc, variable_name, time_index):
+    if variable_name not in nc.variables:
+        return None
+    var = nc.variables[variable_name]
+    dimensions = getattr(var, "dimensions", ())
+    arr = var[time_index, ...] if dimensions and dimensions[0] == "Time" else var[...]
+    arr = np.asarray(np.ma.filled(np.ma.asarray(arr, dtype=float), np.nan)).squeeze()
+    if arr.ndim != 2:
+        raise ValueError(f"WRF {variable_name} expected a 2D field; got {arr.shape}")
+    return arr
+
+
+def _same_snow_grid(current, current_idx, previous, previous_idx):
+    # Use the 2D moving-nest coordinates, not array indices or shapes alone.
+    for options, is_lon in ((('XLAT', 'XLAT_M'), False), (('XLONG', 'XLONG_M'), True)):
+        field = next((v for v in options if v in current.variables and v in previous.variables), None)
+        if field is None:
+            return False
+        a = _snow_array(current, field, current_idx)
+        b = _snow_array(previous, field, previous_idx)
+        if a.shape != b.shape or not np.all(np.isfinite(a)) or not np.all(np.isfinite(b)):
+            return False
+        delta = (a - b + 180.0) % 360.0 - 180.0 if is_lon else a - b
+        if np.max(np.abs(delta)) > 1.0e-5:
+            return False
+    return True
+
+
+def snow_diagnostic(current, current_idx, previous, previous_idx,
+                    kind, scale=1.0, label='snow'):
+    """Return (array, truthful_description), never silently skip a plot.
+
+    Accumulations only use genuinely cumulative fields at geographically
+    matching coordinates. SNOW and SNOWH differences are *net snowpack change*,
+    not accumulated snowfall. When frames differ geographically (moving nest),
+    the program plots a current snowpack snapshot instead of subtracting cells.
+    All snow-depth estimates based on ACSNOW/SNOWNC use an assumed 10:1 ratio.
+    """
+    depth = kind == 'snow_depth'
+    if kind not in ('snow_depth', 'snow_swe'):
+        raise ValueError(f'Unknown snow product kind: {kind}')
+    unit = 'in' if abs(scale - .3937007874015748) < 1e-6 or abs(scale - .03937007874015748) < 1e-6 else 'mm'
+    descriptor = 'estimated snow depth (10:1)' if depth else 'snowfall water equivalent'
+    same_frame = (current_idx == previous_idx and
+                  getattr(current, 'filepath', lambda: None)() == getattr(previous, 'filepath', lambda: None)())
+    try:
+        aligned = not same_frame and _same_snow_grid(current, current_idx, previous, previous_idx)
+    except (KeyError, ValueError, IndexError):
+        aligned = False
+    if aligned:
+        for field, qualifier in (('ACSNOW','accumulated snowfall'), ('SNOWNC','grid-scale accumulated snowfall')):
+            new = _snow_array(current,field,current_idx)
+            old = _snow_array(previous,field,previous_idx)
+            if new is None or old is None or new.shape != old.shape:
+                continue
+            change = new - old
+            if np.isfinite(change).all() and np.nanmin(change) >= -0.001:
+                change = np.maximum(change, 0.0)
+                description = f'{qualifier}: {descriptor} ({unit})'
+                print(f'INFO {label}: {description}',flush=True)
+                return change*scale, description
+            print(f'WARNING {label}: {field} accumulator reset/invalid; searching fallback',flush=True)
+        fallback_field = 'SNOWH' if depth else 'SNOW'
+        new=_snow_array(current,fallback_field,current_idx)
+        old=_snow_array(previous,fallback_field,previous_idx)
+        if new is not None and old is not None and new.shape==old.shape:
+            factor = (1000.0 if unit=='mm' else 39.37007874015748) if depth else scale
+            description = ('NET snowpack-depth change (not accumulated snowfall)' if depth else
+                           'NET snowpack-SWE change (not accumulated snowfall)')+f' ({unit})'
+            print(f'WARNING {label}: using {fallback_field}: {description}',flush=True)
+            return (new-old)*factor, description
+    elif not same_frame:
+        print(f'WARNING {label}: moving/repositioned nest or missing coordinates: using current-field snapshot, not grid-index subtraction', flush=True)
+
+    # No valid accumulation: always show the existing current snow state.
+    # This is deliberately a *different* diagnostic, labeled on the figure.
+    if depth:
+        for name,factor,description in (
+            ('SNOWH', (1000.0 if unit=='mm' else 39.37007874015748), f'SNAPSHOT snowpack depth ({unit}); NOT interval snowfall'),
+            ('SNOW',scale, f'SNAPSHOT 10:1 estimated snowpack depth ({unit}); NOT interval snowfall')):
+            arr=_snow_array(current,name,current_idx)
+            if arr is not None:
+                print(f'WARNING {label}: {description}',flush=True)
+                return arr*factor,description
+    else:
+        for name, factor,description in (
+            ('SNOW',scale,f'SNAPSHOT snowpack SWE ({unit}); NOT interval snowfall'),
+            ('ACSNOW',scale,f'SINCE-INITIALIZATION ACSNOW ({unit}); NOT requested interval'),
+            ('SNOWNC',scale,f'SINCE-INITIALIZATION SNOWNC ({unit}); NOT requested interval'),
+            ('SNOWH',scale*100,f'SNAPSHOT snowpack SWE ({unit}) estimated 10:1 from SNOWH; NOT interval snowfall')):
+            arr=_snow_array(current,name,current_idx)
+            if arr is not None:
+                print(f'WARNING {label}: {description}',flush=True)
+                return arr*factor,description
+    raise RuntimeError(f'{label}: no ACSNOW, SNOWNC, SNOW, or SNOWH available for snow plotting; check WRF history variables')
+
+warnings.filterwarnings("default")
 
 ###############################################################################
 # Canonical helper function block (v9 – contiguous, order-locked)
@@ -356,7 +501,11 @@ def process_frame(args):
         print(f"Plotting data: {end_valid_dt:%H:%M:%SZ %Y-%m-%d}")
 
         # Accumulated snow over forecast period (diagnostic unchanged)
-        total_forecast_snow = end_total_snow - start_total_snow
+        with Dataset(start_ncfile_path) as _previous_accum_nc:
+            total_forecast_snow, _snow_description = snow_diagnostic(
+                nc_end, end_time_index, _previous_accum_nc, start_time_index,
+                'snow_depth', scale=0.3937007874015748,
+                label='total estimated snowfall (10:1)')
 
         # ---------------------------------------------------------------------
         # Plotting fields derived from the end frame (moving-nest safe)
@@ -366,20 +515,7 @@ def process_frame(args):
         temp = wrf.getvar(nc_end, "T2", timeidx=end_time_index)
 
         # Single, consistent time index (no ALL_TIMES) to avoid shape mismatch
-        temp3d = wrf.getvar(nc_end, "temp", units="degC", timeidx=end_time_index)
 
-        temp_850 = wrf.vinterp(
-            nc_end,
-            temp3d,
-            "pressure",
-            [850],
-            field_type="tc",
-            extrapolate=True,
-            squeeze=True,
-            meta=True,
-            timeidx=end_time_index,
-        )
-        temp_850 = np.squeeze(temp_850, axis=0)
 
         # Lat/lon + grid spacing (recomputed per frame)
         lats, lons = wrf.latlon_coords(temp)
@@ -397,7 +533,6 @@ def process_frame(args):
         ###########################################################################
         # Smooth temp fields (kept as in original, even if not contoured)
         smooth_temp = gaussian_filter(to_np(temp), sigma=1.0)
-        smooth_temp_850 = gaussian_filter(to_np(temp_850), sigma=1.0)
 
         # ---------------------------------------------------------------------
         # Dateline continuity and polar masking (v9 canonical helper)
@@ -407,13 +542,11 @@ def process_frame(args):
             lons_np,
             total_forecast_snow,
             smooth_temp,
-            smooth_temp_850,
         ) = handle_domain_continuity_and_polar_mask(
             lats_np,
             lons_np,
             total_forecast_snow,
             smooth_temp,
-            smooth_temp_850,
         )
 
         cart_proj = wrf.get_cartopy(temp)
@@ -495,7 +628,7 @@ def process_frame(args):
         cbar = fig.colorbar(
             Snow_contour, ax=ax, orientation="vertical", shrink=0.8, pad=0.05
         )
-        cbar.set_label("Total Snow (Inch)", fontsize=14)
+        cbar.set_label("Estimated snowfall depth (in, 10:1)", fontsize=14)
         cbar.set_ticks(Snow_levels)
         cbar.set_ticklabels([f"{level:.2f}" for level in Snow_levels])
 
@@ -518,7 +651,7 @@ def process_frame(args):
         plt.title(
             "Weather Research and Forecasting Model\n"
             f"Average Grid Spacing:{avg_dx_km}x{avg_dy_km}km\n"
-            "Total Snow (Inch)\n"
+            "Estimated snowfall depth (in, 10:1)\n"
             "Model Snow Height Difference",
             loc="left",
             fontsize=13,
@@ -535,6 +668,14 @@ def process_frame(args):
         fname_time = end_valid_dt.strftime("%Y%m%d%H%M%S")
         file_out = f"wrf_{domain}_total_snow_inch_{fname_time}.png"
 
+        # The colorbar must also reflect snapshot/net-change fallback semantics.
+
+        cbar.set_label(_snow_description, fontsize=12)
+
+        # Label the measured/estimated quantity, especially snapshot fallbacks.
+        fig.text(0.5, 0.012, _snow_description, ha="center", va="bottom",
+                 fontsize=11, fontweight="bold", color="darkred",
+                 bbox=dict(facecolor="white", alpha=0.94, edgecolor="none", pad=3))
         plt.savefig(
             os.path.join(path_figures, "Images", file_out),
             bbox_inches="tight",

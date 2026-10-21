@@ -522,7 +522,7 @@ def make_plot(samples, *, city, latitude, longitude, domain, output_path, dpi=20
                    fontsize=11, weight='bold', pad=7)
     snow_ax = p_ax.twinx()
     snow_ax.set_ylim(p_ax.get_ylim())
-    snow_ax.set_ylabel(f'Estimated Snowfall (10:1 ratio) ({punit})', fontsize=9)
+    snow_ax.set_ylabel(f'Estimated Snowfall (10:1 ratio) ({punit})', color='#14b9ef', fontsize=9)
     snow_ax.yaxis.set_major_locator(MaxNLocator(nbins=5))
     snow_ax.grid(False)
 

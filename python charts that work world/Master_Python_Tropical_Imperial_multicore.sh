@@ -351,6 +351,7 @@ d01_scripts=(
   "cloud_top_temperature.py"
   "precipitable_water_inch.py"
   "cloud_top_temperature_rainbow.py"
+  "tropical_cyclone_radial_structure.py"
 )
 
 run_scripts_in_parallel "d01" "${d01_scripts[@]}"
@@ -408,6 +409,7 @@ d02_scripts=(
   "tropical_surface_slp_wind_gust_speed_mph_direction.py"
   "tropical_surface_sst_degf_slp_wind_speed_dir.py"
   "tropical_hurricane_track.py"
+  "tropical_cyclone_radial_structure.py"
 )
 
 run_scripts_in_parallel "d02" "${d02_scripts[@]}"

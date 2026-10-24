@@ -18,8 +18,7 @@ conda activate wrf-python || { echo "Failed to activate conda environment."; exi
 
 # Define locations (station/city name -> "lat,lon")
 declare -A locations=(
-["Guatemala City, GT"]="14.6349,-90.5069"  # Capital and largest city of Guatemala
-["Quetzaltenango, GT"]="14.8349,-91.5189"  # Second-largest city, also known as Xela
+["Taipei, TW"]="25.0330,121.5654"  # Taipei, Taiwan
 )
 ###############################################################################
 # WRF-native trajectory settings
@@ -352,6 +351,7 @@ d01_scripts=(
   "cloud_top_temperature.py"
   "precipitable_water_cm.py"
   "cloud_top_temperature_rainbow.py"
+  "tropical_cyclone_radial_structure.py"
 )
 
 run_scripts_in_parallel "d01" "${d01_scripts[@]}"
@@ -409,6 +409,7 @@ d02_scripts=(
   "tropical_surface_slp_wind_gust_speed_knots_direction.py"
   "tropical_surface_sst_degc_slp_wind_speed_dir.py"
   "tropical_hurricane_track.py"
+  "tropical_cyclone_radial_structure.py"
 )
 
 

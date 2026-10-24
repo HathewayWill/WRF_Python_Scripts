@@ -247,6 +247,7 @@ You will notice that some scripts have similar names. That is intentional. I dev
 * tropical_surface_sst_degc_slp_wind_speed_dir.py
 * tropical_surface_sst_degf_slp_wind_speed_dir.py
 * tropical_hurricane_track.py
+* tropical_cyclone_radial_structure.py
 
 <img width="2130" height="1377" alt="wrf_hurricane_track_d02_2026100900_to_2026101100_map" src="https://github.com/user-attachments/assets/43dc2267-7f0f-4b54-90b7-69afaa6ad63a" />
 
@@ -255,6 +256,9 @@ You will notice that some scripts have similar names. That is intentional. I dev
 <img width="2210" height="1851" alt="wrf_d02_SLP_WIND_TEMP" src="https://github.com/user-attachments/assets/0831cdfc-1e91-4375-88bd-c75909ee73d4" />
 
 <img width="2074" height="1851" alt="wrf_d02_SLP_WIND_SSTEMP" src="https://github.com/user-attachments/assets/34b8c4d3-ecca-4eeb-accd-78cf623ac7c3" />
+
+<img width="2736" height="1745" alt="wrf_d03_TC_Standard_Radii_20261020020000" src="https://github.com/user-attachments/assets/7e7a3964-60fe-44ff-8af4-621938a51fbf" />
+
 
 ---
 

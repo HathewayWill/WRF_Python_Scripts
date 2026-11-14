@@ -734,8 +734,7 @@ def process_frame(args):
         plt.title(
             "Weather Research and Forecasting Model\n"
             f"Average Grid Spacing:{avg_dx_km}x{avg_dy_km}km\n"
-            "24-hour Snowfall water equivalent (in liquid)\n"
-            "10:1 Ratio",
+            "24-hour Snowfall Water Equivalent (in liquid)\n",
             loc="left",
             fontsize=13,
         )

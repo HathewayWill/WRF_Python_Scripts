@@ -851,8 +851,7 @@ def process_frame(args):
             "Weather Research and Forecasting Model\n"
             f"Average Grid Spacing: {avg_dx_km} x {avg_dy_km} km\n"
             "SLP (hPa)\n"
-            "1-hour snowfall SWE (mm liquid)\n"
-            "10:1 Ratio",
+            "1-hour snowfall SWE (mm liquid)\n",
             loc="left",
             fontsize=13,
         )

@@ -8,8 +8,8 @@ Physics preserved from original:
     * slp = wrf.getvar(ncfile, "slp",  timeidx=...)
     * snow = wrf.getvar(ncfile, "SNOW", timeidx=...)
       (units: kg m-2 = mm of liquid water)
-    * total_snow = snow * 10          (10:1 liquid:solid ratio)
-    * 24-hr accumulation uses the frame 23 indices earlier.
+    * SWE is calculated from accumulated snowfall water equivalent.
+    * Accumulation uses exact 24-hour UTC endpoints when available.
     * Same Snow_levels and RGB colormap.
 
 STANDALONE REPAIR NOTE: Snowfall water equivalent uses ACSNOW (or labeled
@@ -798,8 +798,7 @@ def process_frame(args):
         plt.title(
             "Weather Research and Forecasting Model\n"
             f"Average Grid Spacing:{avg_dx_km}x{avg_dy_km}km\n"
-            "24-hour snowfall SWE (mm liquid)\n"
-            "10:1 Ratio",
+            "24-hour snowfall SWE (mm liquid)\n",
             loc="left",
             fontsize=13,
         )

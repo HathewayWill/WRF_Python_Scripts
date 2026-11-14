@@ -564,7 +564,7 @@ def process_frame(args):
 
         slp = wrf.getvar(ncfile, "slp", timeidx=time_index)
 
-        # Snow water equivalent (mm water) -> inches of snow (10:1 ratio)
+        # Convert snowfall water equivalent from mm liquid to inches liquid.
         # Exact 3-hour UTC accumulation, source: ACSNOW.
         with Dataset(prev2_ncfile_path) as _previous_accum_nc:
             three_hour_snow_in, _snow_description = snow_diagnostic(
@@ -599,11 +599,10 @@ def process_frame(args):
         slp_np = to_np(slp)
         snow_np = to_np(three_hour_snow_in)
         temp_np = to_np(temp)
-        t850_np = to_np(temp_850)
 
-        lats_np, lons_np, slp_np, snow_np, temp_np, t850_np = (
+        lats_np, lons_np, slp_np, snow_np, temp_np = (
             handle_domain_continuity_and_polar_mask(
-                lats_np, lons_np, slp_np, snow_np, temp_np, t850_np
+                lats_np, lons_np, slp_np, snow_np, temp_np
             )
         )
 
@@ -633,7 +632,6 @@ def process_frame(args):
         # Smooth fields (same sigmas)
         smooth_slp = gaussian_filter(slp_np, sigma=5.0)
         _ = gaussian_filter(temp_np, sigma=1.0)
-        _ = gaussian_filter(t850_np, sigma=1.0)
 
         # SLP contours (fixed interval & range)
         contour_interval = 2
@@ -757,8 +755,7 @@ def process_frame(args):
             "Weather Research and Forecasting Model\n"
             f"Average Grid Spacing:{avg_dx_km}x{avg_dy_km}km\n"
             "SLP (hPa)\n"
-            "3-hour Total Snow (inch)\n"
-            "10:1 Ratio (from SNOW water equivalent)",
+            "3-hour Snowfall Water Equivalent (in liquid)\n",
             loc="left",
             fontsize=13,
         )

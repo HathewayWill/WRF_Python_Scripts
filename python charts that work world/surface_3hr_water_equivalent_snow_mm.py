@@ -744,8 +744,7 @@ def process_frame(args):
             "Weather Research and Forecasting Model\n"
             f"Average Grid Spacing:{avg_dx_km}x{avg_dy_km}km\n"
             "SLP (hPa)\n"
-            "3-hour Total Snow (mm)\n"
-            "10:1 Ratio (from SNOW water equivalent)",
+            "3-hour Snowfall Water Equivalent (mm liquid)\n",
             loc="left",
             fontsize=13,
         )

@@ -1,6 +1,27 @@
 #!/bin/bash
 
 ###############################################################################
+# Display server detection and noninteractive plotting
+# Batch PNG/CSV output uses Agg on Wayland, X11, and headless systems.
+###############################################################################
+if [[ "${XDG_SESSION_TYPE,,}" == "wayland" ]] || [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
+  DISPLAY_SERVER="Wayland"
+elif [[ "${XDG_SESSION_TYPE,,}" == "x11" ]] || [[ -n "${DISPLAY:-}" ]]; then
+  DISPLAY_SERVER="X11"
+else
+  DISPLAY_SERVER="Headless"
+fi
+
+export MPLBACKEND=Agg
+export QT_QPA_PLATFORM=offscreen
+
+echo "Detected display server: $DISPLAY_SERVER"
+echo "Matplotlib backend: $MPLBACKEND"
+echo "Qt platform: $QT_QPA_PLATFORM"
+
+###############################################################################
+
+###############################################################################
 # Wrapper script to:
 #  - Activate the WRF Conda environment
 #  - Locate the WRF /run directory
@@ -9,18 +30,68 @@
 #    for multiple domains and multiple point locations.
 ###############################################################################
 
-# Initialize Conda environment
-CONDA_BASE=$(conda info --base) || { echo "Failed to retrieve Conda base directory."; exit 1; }
-source "$CONDA_BASE/etc/profile.d/conda.sh" || { echo "Failed to source Conda profile."; exit 1; }
+###############################################################################
+# Select a working WRF-MOSIT wrf-python environment after WRF output selection
+###############################################################################
+activate_wrf_python() {
+  local selected_root base py prefix
+  local -a candidates=()
+  local -A seen=()
+  selected_root="$(dirname "$(dirname "$(realpath -m "$run_location")")")"
 
-# Activate the specific Conda environment
-conda activate wrf-python || { echo "Failed to activate conda environment."; exit 1; }
+  # Prefer the environment belonging to the selected WRF-MOSIT tree.
+  for base in "$selected_root" "$selected_root/miniconda3" "$selected_root/miniforge3" "$selected_root/anaconda3"; do
+    candidates+=("$base")
+  done
+  # Check sibling WRF-MOSIT installations without recursively scanning data.
+  for prefix in "$HOME"/* /opt/*; do
+    [[ -d "$prefix" ]] || continue
+    for base in "$prefix/miniconda3" "$prefix/miniforge3" "$prefix/anaconda3" "$prefix"; do
+      candidates+=("$base")
+    done
+  done
+  if [[ -n "${CONDA_PREFIX:-}" ]]; then
+    if [[ "${CONDA_DEFAULT_ENV:-}" == wrf-python ]]; then
+      candidates+=("$(dirname "$(dirname "$CONDA_PREFIX")")")
+    fi
+  fi
+  if command -v conda >/dev/null 2>&1; then
+    base="$(conda info --base 2>/dev/null)"
+    [[ -n "$base" ]] && candidates+=("$base")
+  fi
 
+  for base in "${candidates[@]}"; do
+    [[ -n "$base" && -z "${seen[$base]+yes}" ]] || continue
+    seen[$base]=1
+    py="$base/envs/wrf-python/bin/python"
+    [[ -x "$py" ]] || continue
+    # Configure PROJ for this candidate before testing geospatial imports.
+    # Each WRF installation retains its own Conda environment and PROJ data.
+    if [[ -f "$base/envs/wrf-python/share/proj/proj.db" ]]; then
+      export PROJ_DATA="$base/envs/wrf-python/share/proj"
+      export PROJ_LIB="$PROJ_DATA"
+    else
+      unset PROJ_DATA PROJ_LIB
+    fi
+    echo "Checking WRF Python: $py"
+    if "$py" -c 'import netCDF4, wrf' ; then
+      PYTHON="$py"
+      echo "WRF run directory : $run_location"
+      echo "Python interpreter: $PYTHON"
+      echo "PROJ directory: ${PROJ_DATA:-not found}"
+      return 0
+    fi
+    echo "WARNING: Python imports failed for $py"
+  done
+  echo "ERROR: No working wrf-python environment found."
+  return 1
+}
+
+###############################################################################
 # Define locations (each value is "lat,lon")
 declare -A locations=(
-    ["Billings, MT"]="45.7833,-108.5007"    # Largest city in Montana
-    ["Missoula, MT"]="46.8721,-113.9940"   # Major city in western Montana
-    ["Great Falls, MT"]="47.5053,-111.3008" # Major city in north-central Montana
+    ["Boston, MA"]="42.3601,-71.0589"    # Boston, Massachusetts
+    ["Hartford, CT"]="41.7658,-72.6734"  # Hartford, Connecticut
 )
 ###############################################################################
 # WRF-native trajectory settings
@@ -55,7 +126,7 @@ run_scripts_in_parallel() {
     fi
 
     echo "Running $script in domain $domain"
-    python3 "$script_dir/$script" "$run_location" "$domain" &
+    "$PYTHON" "$script_dir/$script" "$run_location" "$domain" &
 
     ((counter++))
     if [ "$counter" -eq "$max_parallel" ]; then
@@ -85,7 +156,7 @@ run_vertical_wind() {
     cd "$parent_folder/$domain/$location" || { echo "Failed to cd into $parent_folder/$domain/$location"; exit 1; }
 
     echo "Running vertical_wind_profile.py for $location in $domain (lat=$lat lon=$long)"
-    python3 "$script_dir/vertical_wind_profile.py" \
+    "$PYTHON" "$script_dir/vertical_wind_profile.py" \
       "$run_location" "$domain" "$lat" "$long" 2>&1 || {
         echo "vertical_wind_profile.py failed for $location in $domain"
         exit 1
@@ -108,7 +179,7 @@ run_vertical_wind_4km() {
     cd "$parent_folder/$domain/$location" || { echo "Failed to cd into $parent_folder/$domain/$location"; exit 1; }
 
     echo "Running vertical_wind_profile_4km.py for $location in $domain (lat=$lat lon=$long)"
-    python3 "$script_dir/vertical_wind_profile_4km.py" \
+    "$PYTHON" "$script_dir/vertical_wind_profile_4km.py" \
       "$run_location" "$domain" "$lat" "$long" 2>&1 || {
         echo "vertical_wind_profile_4km.py failed for $location in $domain"
         exit 1
@@ -131,7 +202,7 @@ run_skew_t() {
     cd "$parent_folder/$domain/$location" || { echo "Failed to cd into $parent_folder/$domain/$location"; exit 1; }
 
     echo "Running enhanced_skewt_diagram.py for $location in $domain (lat=$lat lon=$long)"
-    python3 "$script_dir/enhanced_skewt_diagram.py" \
+    "$PYTHON" "$script_dir/enhanced_skewt_diagram.py" \
       "$run_location" "$domain" "$location" "$lat" "$long" 2>&1 || {
         echo "enhanced_skewt_diagram.py failed for $location in $domain"
         exit 1
@@ -154,7 +225,7 @@ run_meteogram() {
     cd "$parent_folder/$domain/$location" || { echo "Failed to cd into $parent_folder/$domain/$location"; exit 1; }
 
     echo "Running meteogram_degf.py for $location in $domain (lat=$lat lon=$long)"
-    python3 "$script_dir/meteogram_degf.py" \
+    "$PYTHON" "$script_dir/meteogram_degf.py" \
       "$run_location" "$domain" "$location" "$lat" "$long" 2>&1 || {
         echo "meteogram_degf.py failed for $location in $domain"
         exit 1
@@ -197,7 +268,7 @@ run_trajectory_script() {
     echo "  Heights: $TRAJECTORY_HEIGHT_LEVELS m AGL"
     echo "  Time step: $TRAJECTORY_DT_MIN minutes"
 
-    python3 "$script_dir/$trajectory_script" \
+    "$PYTHON" "$script_dir/$trajectory_script" \
       "$domain" "$location" "$lat" "$long" \
       --wrf-dir "$run_location" \
       --height-levels-m "$TRAJECTORY_HEIGHT_LEVELS" \
@@ -257,25 +328,26 @@ run_d02_trajectories() {
 # Find WRF /run directory
 ###############################################################################
 find_wrf_run_directories() {
-  local run_locations
-
-  run_locations=$(find / -type d \
-    \( -regex ".*/WRF[-Vv]*[0-9.]+/run" -o -regex ".*/WRF/run" \) 2>/dev/null)
-
-  if [ -z "$run_locations" ]; then
-    echo "No WRF run directory found. Exiting."
-    exit 1
-  else
-    echo "WRF run folder found at the following location(s):"
-    echo "$run_locations"
+  local run_locations="" root run
+  local -a found=()
+  # Inspect known installation layouts only; never scan the entire filesystem.
+  for root in "$HOME"/* /opt/*; do
+    [[ -d "$root" ]] || continue
+    for run in "$root"/WRF-*/run "$root"/WRFV*/run "$root"/WRF/run; do
+      [[ -d "$run" ]] && found+=("$run")
+    done
+  done
+  if (( ${#found[@]} == 0 )); then
+    echo "ERROR: No WRF run directory found under $HOME or /opt."
+    return 1
   fi
-
-  if [ "$(echo "$run_locations" | wc -l)" -gt 1 ]; then
-    echo "Multiple /run directories found:"
-    echo "$run_locations"
-    read -p "Enter the location of the /run directory you want to use: " run_location
+  printf 'WRF run folder found at the following location(s):\n'
+  printf '%s\n' "${found[@]}"
+  if (( ${#found[@]} > 1 )); then
+    read -r -p "Enter the location of the /run directory you want to use: " run_location
+    [[ -d "$run_location" ]] || { echo "ERROR: Invalid directory"; return 1; }
   else
-    run_location="$run_locations"
+    run_location="${found[0]}"
   fi
 }
 
@@ -290,6 +362,8 @@ parent_folder="${script_dir}/${STARTYEAR}_${STARTMONTH}_${STARTDAY}"
 mkdir -p "$parent_folder"
 
 find_wrf_run_directories
+
+activate_wrf_python || exit 1
 
 echo "Running point-based Python charts for domain."
 sleep 5
